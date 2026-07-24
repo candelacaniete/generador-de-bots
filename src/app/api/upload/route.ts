@@ -107,11 +107,16 @@ export async function POST(req: NextRequest) {
 
     if (businessError || !business) {
       console.error(businessError);
+      const detail = businessError?.message ?? "error desconocido";
+      const hint =
+        detail.toLowerCase().includes("path") ||
+        detail.toLowerCase().includes("schema cache") ||
+        detail.toLowerCase().includes("does not exist")
+          ? " Revisá que next_public_supabase_url sea exactamente https://TU-REF.supabase.co (Settings → API → Project URL) y que hayas ejecutado supabase/schema.sql."
+          : "";
       return NextResponse.json(
         {
-          error: businessError?.message
-            ? `No se pudo crear el negocio: ${businessError.message}`
-            : "No se pudo crear el negocio",
+          error: `No se pudo crear el negocio: ${detail}.${hint}`,
         },
         { status: 500 }
       );
