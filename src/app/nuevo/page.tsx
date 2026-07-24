@@ -34,9 +34,24 @@ export default function NuevoPage() {
         body: form,
       });
 
-      const data = await res.json();
+      const raw = await res.text();
+      let data: { error?: string; business_id?: string } = {};
+      try {
+        data = raw ? JSON.parse(raw) : {};
+      } catch {
+        throw new Error(
+          res.ok
+            ? "Respuesta inválida del servidor"
+            : `Error del servidor (${res.status}). Revisá las variables de entorno en Vercel.`
+        );
+      }
+
       if (!res.ok) {
         throw new Error(data.error || "No se pudo crear el bot");
+      }
+
+      if (!data.business_id) {
+        throw new Error("El servidor no devolvió el business_id");
       }
 
       router.push(`/bot/${data.business_id}`);

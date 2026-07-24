@@ -8,10 +8,37 @@ import { getSupabase } from "@/lib/supabase";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const MAX_FILE_BYTES = 8 * 1024 * 1024; // 8 MB
+const MAX_FILE_BYTES = 4 * 1024 * 1024; // 4 MB (límite práctico Hobby de Vercel)
+
+function missingEnv(): string | null {
+  const required = [
+    "NEXT_PUBLIC_SUPABASE_URL",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "OPENAI_API_KEY",
+  ] as const;
+
+  const missing = required.filter((key) => !process.env[key]);
+  if (missing.length === 0) return null;
+  return `Faltan variables de entorno: ${missing.join(", ")}`;
+}
+
+function isUploadFile(value: FormDataEntryValue | null): value is File {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "arrayBuffer" in value &&
+    "name" in value &&
+    typeof (value as File).arrayBuffer === "function"
+  );
+}
 
 export async function POST(req: NextRequest) {
   try {
+    const envError = missingEnv();
+    if (envError) {
+      return NextResponse.json({ error: envError }, { status: 500 });
+    }
+
     const form = await req.formData();
     const nombre = String(form.get("nombre") ?? "").trim();
     const file = form.get("archivo");
@@ -23,7 +50,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!(file instanceof File)) {
+    if (!isUploadFile(file)) {
       return NextResponse.json(
         { error: "Debés subir un archivo .docx o .pdf" },
         { status: 400 }
@@ -41,7 +68,7 @@ export async function POST(req: NextRequest) {
 
     if (file.size > MAX_FILE_BYTES) {
       return NextResponse.json(
-        { error: "El archivo supera el límite de 8 MB" },
+        { error: "El archivo supera el límite de 4 MB" },
         { status: 400 }
       );
     }
@@ -80,7 +107,11 @@ export async function POST(req: NextRequest) {
     if (businessError || !business) {
       console.error(businessError);
       return NextResponse.json(
-        { error: "No se pudo crear el negocio" },
+        {
+          error: businessError?.message
+            ? `No se pudo crear el negocio: ${businessError.message}`
+            : "No se pudo crear el negocio",
+        },
         { status: 500 }
       );
     }
@@ -99,7 +130,11 @@ export async function POST(req: NextRequest) {
       console.error(documentError);
       await supabase.from("businesses").delete().eq("id", business.id);
       return NextResponse.json(
-        { error: "No se pudo guardar el documento" },
+        {
+          error: documentError?.message
+            ? `No se pudo guardar el documento: ${documentError.message}`
+            : "No se pudo guardar el documento",
+        },
         { status: 500 }
       );
     }
@@ -119,7 +154,11 @@ export async function POST(req: NextRequest) {
       console.error(chunksError);
       await supabase.from("businesses").delete().eq("id", business.id);
       return NextResponse.json(
-        { error: "No se pudieron guardar los embeddings" },
+        {
+          error: chunksError.message
+            ? `No se pudieron guardar los embeddings: ${chunksError.message}`
+            : "No se pudieron guardar los embeddings",
+        },
         { status: 500 }
       );
     }

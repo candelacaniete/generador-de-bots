@@ -8,6 +8,7 @@ App web para crear chatbots con IA a partir de un PDF/Word del negocio. Multi-te
 - **Supabase** (Postgres + pgvector)
 - **Anthropic Claude** (`claude-haiku-4-5-20251001`) para respuestas
 - **OpenAI** (`text-embedding-3-small`) para embeddings (Anthropic no ofrece embeddings)
+- Extracción PDF con **unpdf** (compatible con Vercel serverless)
 
 ## Setup
 
