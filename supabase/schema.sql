@@ -85,3 +85,8 @@ as $$
   order by dc.embedding <=> query_embedding
   limit match_count;
 $$;
+
+-- Permitir ejecutar la RPC desde la API
+grant execute on function match_document_chunks(vector, uuid, int) to service_role;
+grant execute on function match_document_chunks(vector, uuid, int) to anon;
+grant execute on function match_document_chunks(vector, uuid, int) to authenticated;

@@ -51,7 +51,15 @@ export default function ChatWidget({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ business_id: businessId, mensaje: text }),
       });
-      const data = await res.json();
+      const raw = await res.text();
+      let data: { error?: string; respuesta?: string } = {};
+      try {
+        data = raw ? JSON.parse(raw) : {};
+      } catch {
+        throw new Error(
+          `Error del servidor (${res.status}). Revisá los logs de Vercel.`
+        );
+      }
       if (!res.ok) throw new Error(data.error || "Error del chat");
 
       setMessages((prev) => [
@@ -62,13 +70,17 @@ export default function ChatWidget({
           text: data.respuesta || "Sin respuesta",
         },
       ]);
-    } catch {
+    } catch (err) {
+      const detail =
+        err instanceof Error
+          ? err.message
+          : "No pude responder ahora. Intentá de nuevo en un momento.";
       setMessages((prev) => [
         ...prev,
         {
           id: `e-${Date.now()}`,
           role: "bot",
-          text: "No pude responder ahora. Intentá de nuevo en un momento.",
+          text: detail,
         },
       ]);
     } finally {
