@@ -4,6 +4,7 @@ import { embedTexts } from "@/lib/embeddings";
 import { extractText } from "@/lib/extract";
 import { slugify } from "@/lib/slug";
 import { getSupabase } from "@/lib/supabase";
+import { env } from "@/lib/env";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -17,9 +18,9 @@ function missingEnv(): string | null {
     "OPENAI_API_KEY",
   ] as const;
 
-  const missing = required.filter((key) => !process.env[key]);
+  const missing = required.filter((key) => !env(key));
   if (missing.length === 0) return null;
-  return `Faltan variables de entorno: ${missing.join(", ")}`;
+  return `Faltan variables de entorno: ${missing.join(", ")} (también acepta minúsculas)`;
 }
 
 function isUploadFile(value: FormDataEntryValue | null): value is File {

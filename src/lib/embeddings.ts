@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { env } from "@/lib/env";
 
 const EMBEDDING_MODEL = "text-embedding-3-small";
 
@@ -6,7 +7,7 @@ let openai: OpenAI | null = null;
 
 function getOpenAI(): OpenAI {
   if (openai) return openai;
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = env("OPENAI_API_KEY");
   if (!apiKey) {
     throw new Error("Falta OPENAI_API_KEY en el entorno");
   }

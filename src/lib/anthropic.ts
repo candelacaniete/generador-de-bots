@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { env } from "@/lib/env";
 
 const MODEL = "claude-haiku-4-5-20251001";
 
@@ -6,7 +7,7 @@ let anthropic: Anthropic | null = null;
 
 function getAnthropic(): Anthropic {
   if (anthropic) return anthropic;
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = env("ANTHROPIC_API_KEY");
   if (!apiKey) {
     throw new Error("Falta ANTHROPIC_API_KEY en el entorno");
   }
