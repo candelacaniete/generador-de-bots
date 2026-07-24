@@ -1,18 +1,18 @@
 /**
  * Lee una env var aceptando mayúsculas o minúsculas
  * (algunas UIs solo permiten nombres en lowercase).
+ * También limpia espacios y comillas alrededor del valor.
  */
 export function env(name: string): string | undefined {
-  const direct = process.env[name];
-  if (direct) return direct;
+  const raw =
+    process.env[name] ??
+    process.env[name.toLowerCase()] ??
+    process.env[name.toUpperCase()];
 
-  const lower = process.env[name.toLowerCase()];
-  if (lower) return lower;
+  if (raw == null) return undefined;
 
-  const upper = process.env[name.toUpperCase()];
-  if (upper) return upper;
-
-  return undefined;
+  const cleaned = raw.trim().replace(/^['"]|['"]$/g, "").trim();
+  return cleaned || undefined;
 }
 
 export function requireEnv(name: string): string {
