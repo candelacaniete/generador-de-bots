@@ -50,6 +50,13 @@ create table if not exists conversations (
 
 create index if not exists conversations_business_id_idx on conversations(business_id);
 
+-- RLS: la app usa solo service_role en el servidor (bypassea RLS).
+-- Sin policies públicas, anon/authenticated no pueden leer ni escribir.
+alter table businesses enable row level security;
+alter table documents enable row level security;
+alter table document_chunks enable row level security;
+alter table conversations enable row level security;
+
 -- Función RPC: busca los chunks más relevantes por negocio
 create or replace function match_document_chunks(
   query_embedding vector(1536),
