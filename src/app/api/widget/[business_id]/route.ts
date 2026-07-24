@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
 import { generateWidgetScript } from "@/lib/widget-script";
+import { env } from "@/lib/env";
 
 export const runtime = "nodejs";
 
 function appBaseUrl(req: NextRequest): string {
-  const fromEnv = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
+  const fromEnv = env("NEXT_PUBLIC_APP_URL")?.replace(/\/$/, "");
   if (fromEnv) return fromEnv;
   return req.nextUrl.origin;
 }
