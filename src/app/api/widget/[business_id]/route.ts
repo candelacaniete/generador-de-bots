@@ -18,6 +18,7 @@ export async function GET(
   try {
     const { business_id } = await context.params;
     const businessId = business_id?.trim();
+    const wantsDownload = req.nextUrl.searchParams.get("download") === "1";
 
     if (!businessId) {
       return NextResponse.json(
@@ -55,15 +56,20 @@ export async function GET(
     });
 
     const filename = `chatbot-${business.slug}.js`;
+    const headers: Record<string, string> = {
+      "Content-Type": "application/javascript; charset=utf-8",
+      "Cache-Control": "public, max-age=60",
+      "Access-Control-Allow-Origin": "*",
+    };
 
-    return new NextResponse(script, {
-      status: 200,
-      headers: {
-        "Content-Type": "application/javascript; charset=utf-8",
-        "Content-Disposition": `attachment; filename="${filename}"`,
-        "Cache-Control": "no-store",
-      },
-    });
+    if (wantsDownload) {
+      headers["Content-Disposition"] = `attachment; filename="${filename}"`;
+    } else {
+      // Para <script src="..."> en WordPress u otros sitios
+      headers["Content-Disposition"] = `inline; filename="${filename}"`;
+    }
+
+    return new NextResponse(script, { status: 200, headers });
   } catch (err) {
     console.error("[widget]", err);
     const message =

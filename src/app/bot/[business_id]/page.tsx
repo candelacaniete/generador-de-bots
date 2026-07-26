@@ -1,11 +1,25 @@
 import Link from "next/link";
+import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import ChatWidget from "@/components/ChatWidget";
+import { env } from "@/lib/env";
 import { getSupabase } from "@/lib/supabase";
+import CopySnippet from "@/components/CopySnippet";
 
 type PageProps = {
   params: Promise<{ business_id: string }>;
 };
+
+async function resolveAppUrl(): Promise<string> {
+  const fromEnv = env("NEXT_PUBLIC_APP_URL")?.replace(/\/$/, "");
+  if (fromEnv) return fromEnv;
+
+  const h = await headers();
+  const host = h.get("x-forwarded-host") || h.get("host");
+  const proto = h.get("x-forwarded-proto") || "https";
+  if (host) return `${proto}://${host}`;
+  return "";
+}
 
 export default async function BotPage({ params }: PageProps) {
   const { business_id } = await params;
@@ -32,6 +46,12 @@ export default async function BotPage({ params }: PageProps) {
     notFound();
   }
 
+  const appUrl = await resolveAppUrl();
+  const widgetUrl = appUrl
+    ? `${appUrl}/api/widget/${business.id}`
+    : `/api/widget/${business.id}`;
+  const embedSnippet = `<script src="${widgetUrl}" defer></script>`;
+
   return (
     <main className="mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col px-4 py-10">
       <div className="mb-8">
@@ -46,7 +66,7 @@ export default async function BotPage({ params }: PageProps) {
         </h1>
         <p className="mt-2 text-sm text-slate-600">
           Probá el chat con la burbuja de abajo a la derecha. Cuando esté listo,
-          descargá el script para pegarlo en WordPress.
+          pegá el snippet en WordPress.
         </p>
       </div>
 
@@ -55,28 +75,38 @@ export default async function BotPage({ params }: PageProps) {
           Instalar en tu sitio
         </h2>
         <p className="mt-1 text-sm text-slate-600">
-          Descargá el archivo <code className="text-xs">.js</code> y pegalo en
-          el footer o en el Custom HTML de WordPress. El{" "}
-          <code className="text-xs">business_id</code> ya viene incluido.
+          Copiá y pegá esta línea antes de{" "}
+          <code className="text-xs">&lt;/body&gt;</code> (o en un bloque HTML
+          personalizado / footer de WordPress). Carga el{" "}
+          <code className="text-xs">.js</code> desde nuestra app; no hace falta
+          subir ningún archivo al hosting.
+        </p>
+
+        <CopySnippet text={embedSnippet} />
+
+        <p className="mt-4 text-xs text-slate-500">
+          URL del script:{" "}
+          <a
+            href={widgetUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="break-all text-blue-600 hover:underline"
+          >
+            {widgetUrl}
+          </a>
         </p>
 
         <div className="mt-4 flex flex-wrap gap-3">
           <a
-            href={`/api/widget/${business.id}`}
-            className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700"
+            href={`/api/widget/${business.id}?download=1`}
+            className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition hover:bg-slate-50"
           >
-            Descargar script
+            Descargar .js (opcional)
           </a>
           <code className="self-center rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs text-slate-700">
             {business.id}
           </code>
         </div>
-
-        <pre className="mt-4 overflow-x-auto rounded-xl bg-slate-900 p-4 text-xs leading-relaxed text-slate-100">
-{`<!-- Pegá esto antes de </body> -->
-<script src="https://TU-DOMINIO/chatbot-${business.slug}.js"></script>
-<!-- O subí el .js descargado a tu hosting y apuntá a esa URL -->`}
-        </pre>
       </section>
 
       <ChatWidget businessId={business.id} businessName={business.nombre} />
