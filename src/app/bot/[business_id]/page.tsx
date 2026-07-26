@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import ChatWidget from "@/components/ChatWidget";
 import { env } from "@/lib/env";
+import { normalizeAppUrl } from "@/lib/app-url";
 import { getSupabase } from "@/lib/supabase";
 import CopySnippet from "@/components/CopySnippet";
 
@@ -11,7 +12,7 @@ type PageProps = {
 };
 
 async function resolveAppUrl(): Promise<string> {
-  const fromEnv = env("NEXT_PUBLIC_APP_URL")?.replace(/\/$/, "");
+  const fromEnv = normalizeAppUrl(env("NEXT_PUBLIC_APP_URL"));
   if (fromEnv) return fromEnv;
 
   const h = await headers();

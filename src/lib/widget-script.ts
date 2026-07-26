@@ -2,6 +2,8 @@
  * Genera un snippet JS standalone (vanilla) con business_id hardcodeado.
  * Autocontenido: inyecta CSS + UI de chat flotante.
  */
+import { normalizeAppUrl } from "@/lib/app-url";
+
 export function generateWidgetScript(options: {
   businessId: string;
   apiBaseUrl: string;
@@ -15,7 +17,8 @@ export function generateWidgetScript(options: {
     primaryColor = "#2563eb",
   } = options;
 
-  const apiUrl = `${apiBaseUrl.replace(/\/$/, "")}/api/chat`;
+  const base = normalizeAppUrl(apiBaseUrl) ?? apiBaseUrl.replace(/\/$/, "");
+  const apiUrl = `${base}/api/chat`;
   const safeName = JSON.stringify(businessName);
   const safeId = JSON.stringify(businessId);
   const safeApi = JSON.stringify(apiUrl);
