@@ -5,7 +5,16 @@
       "memory": 1024
     },
     "src/app/api/chat/route.ts": {
-      "maxDuration": 30
+      "maxDuration": 60
+    },
+    "src/app/api/cron/expire-bookings/route.ts": {
+      "maxDuration": 60
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/expire-bookings",
+      "schedule": "*/10 * * * *"
+    }
+  ]
 }

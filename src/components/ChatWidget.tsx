@@ -13,6 +13,10 @@ type ChatWidgetProps = {
   businessName: string;
 };
 
+function storageKey(businessId: string) {
+  return `chatbot_conversation_${businessId}`;
+}
+
 export default function ChatWidget({
   businessId,
   businessName,
@@ -20,6 +24,8 @@ export default function ChatWidget({
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [hydrated, setHydrated] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "welcome",
@@ -30,8 +36,73 @@ export default function ChatWidget({
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    let cancelled = false;
+
+    async function hydrate() {
+      const saved =
+        typeof window !== "undefined"
+          ? window.localStorage.getItem(storageKey(businessId))
+          : null;
+
+      if (!saved) {
+        setHydrated(true);
+        return;
+      }
+
+      try {
+        const res = await fetch(
+          `/api/conversations?business_id=${encodeURIComponent(businessId)}&conversation_id=${encodeURIComponent(saved)}`
+        );
+        if (!res.ok) {
+          window.localStorage.removeItem(storageKey(businessId));
+          setHydrated(true);
+          return;
+        }
+        const data = await res.json();
+        if (cancelled) return;
+
+        setConversationId(data.conversation_id);
+        const restored: Message[] = (data.mensajes ?? []).map(
+          (
+            m: { role: string; content: string },
+            i: number
+          ) => ({
+            id: `h-${i}`,
+            role: m.role === "user" ? "user" : "bot",
+            text: m.content,
+          })
+        );
+        if (restored.length) {
+          setMessages(restored);
+        }
+      } catch {
+        /* ignore */
+      } finally {
+        if (!cancelled) setHydrated(true);
+      }
+    }
+
+    hydrate();
+    return () => {
+      cancelled = true;
+    };
+  }, [businessId]);
+
+  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, open]);
+
+  function resetConversation() {
+    window.localStorage.removeItem(storageKey(businessId));
+    setConversationId(null);
+    setMessages([
+      {
+        id: "welcome",
+        role: "bot",
+        text: `¡Hola! Soy el asistente de ${businessName}. ¿En qué puedo ayudarte?`,
+      },
+    ]);
+  }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -49,18 +120,32 @@ export default function ChatWidget({
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ business_id: businessId, mensaje: text }),
+        body: JSON.stringify({
+          business_id: businessId,
+          mensaje: text,
+          conversation_id: conversationId,
+        }),
       });
       const raw = await res.text();
-      let data: { error?: string; respuesta?: string } = {};
+      let data: {
+        error?: string;
+        respuesta?: string;
+        conversation_id?: string;
+      } = {};
       try {
         data = raw ? JSON.parse(raw) : {};
       } catch {
-        throw new Error(
-          `Error del servidor (${res.status}). Revisá los logs de Vercel.`
-        );
+        throw new Error(`Error del servidor (${res.status})`);
       }
       if (!res.ok) throw new Error(data.error || "Error del chat");
+
+      if (data.conversation_id) {
+        setConversationId(data.conversation_id);
+        window.localStorage.setItem(
+          storageKey(businessId),
+          data.conversation_id
+        );
+      }
 
       setMessages((prev) => [
         ...prev,
@@ -88,20 +173,31 @@ export default function ChatWidget({
     }
   }
 
+  if (!hydrated) return null;
+
   return (
     <>
       {open ? (
         <div className="fixed bottom-24 right-4 z-50 flex h-[min(480px,70vh)] w-[min(360px,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl sm:right-6">
           <div className="flex items-center justify-between bg-blue-600 px-4 py-3 text-white">
             <span className="text-sm font-semibold">{businessName}</span>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="text-xl leading-none opacity-90 hover:opacity-100"
-              aria-label="Cerrar chat"
-            >
-              ×
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={resetConversation}
+                className="text-xs opacity-90 hover:opacity-100"
+              >
+                Nueva
+              </button>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="text-xl leading-none opacity-90 hover:opacity-100"
+                aria-label="Cerrar chat"
+              >
+                ×
+              </button>
+            </div>
           </div>
 
           <div className="flex flex-1 flex-col gap-2.5 overflow-y-auto bg-slate-50 p-4">

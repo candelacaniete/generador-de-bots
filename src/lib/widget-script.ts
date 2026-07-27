@@ -1,6 +1,7 @@
 /**
  * Genera un snippet JS standalone (vanilla) con business_id hardcodeado.
  * Autocontenido: inyecta CSS + UI de chat flotante.
+ * Persiste conversation_id en localStorage.
  */
 import { normalizeAppUrl } from "@/lib/app-url";
 
@@ -19,10 +20,13 @@ export function generateWidgetScript(options: {
 
   const base = normalizeAppUrl(apiBaseUrl) ?? apiBaseUrl.replace(/\/$/, "");
   const apiUrl = `${base}/api/chat`;
+  const convUrl = `${base}/api/conversations`;
   const safeName = JSON.stringify(businessName);
   const safeId = JSON.stringify(businessId);
   const safeApi = JSON.stringify(apiUrl);
+  const safeConv = JSON.stringify(convUrl);
   const safeColor = JSON.stringify(primaryColor);
+  const safeStorageKey = JSON.stringify(`chatbot_conversation_${businessId}`);
 
   return `/*! Chatbot widget — business ${businessId} */
 (function () {
@@ -32,8 +36,13 @@ export function generateWidgetScript(options: {
 
   var BUSINESS_ID = ${safeId};
   var API_URL = ${safeApi};
+  var CONV_URL = ${safeConv};
   var BOT_NAME = ${safeName};
   var PRIMARY = ${safeColor};
+  var STORAGE_KEY = ${safeStorageKey};
+  var conversationId = null;
+
+  try { conversationId = localStorage.getItem(STORAGE_KEY); } catch (e) {}
 
   var css = ""
     + "#cb-root{all:initial;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;}"
@@ -50,8 +59,11 @@ export function generateWidgetScript(options: {
     + "overflow:hidden;border:1px solid #e5e7eb;}"
     + "#cb-panel.open{display:flex;}"
     + "#cb-header{background:" + PRIMARY + ";color:#fff;padding:14px 16px;font-size:15px;font-weight:600;"
-    + "display:flex;align-items:center;justify-content:space-between;}"
-    + "#cb-close{background:transparent;border:none;color:#fff;font-size:22px;line-height:1;cursor:pointer;opacity:.9;}"
+    + "display:flex;align-items:center;justify-content:space-between;gap:8px;}"
+    + "#cb-header-actions{display:flex;align-items:center;gap:8px;}"
+    + "#cb-new,#cb-close{background:transparent;border:none;color:#fff;cursor:pointer;opacity:.9;}"
+    + "#cb-new{font-size:12px;}"
+    + "#cb-close{font-size:22px;line-height:1;}"
     + "#cb-messages{flex:1;overflow-y:auto;padding:16px;background:#f8fafc;display:flex;flex-direction:column;gap:10px;}"
     + ".cb-msg{max-width:85%;padding:10px 12px;border-radius:12px;font-size:14px;line-height:1.45;white-space:pre-wrap;word-break:break-word;}"
     + ".cb-msg.bot{align-self:flex-start;background:#fff;color:#0f172a;border:1px solid #e2e8f0;}"
@@ -76,7 +88,12 @@ export function generateWidgetScript(options: {
     + '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.2L4 17.2V4h16v12z"/></svg>'
     + "</button>"
     + '<div id="cb-panel" role="dialog" aria-label="Chat">'
-    + '  <div id="cb-header"><span>' + BOT_NAME + '</span><button id="cb-close" type="button" aria-label="Cerrar">×</button></div>'
+    + '  <div id="cb-header"><span>' + BOT_NAME + '</span>'
+    + '    <div id="cb-header-actions">'
+    + '      <button id="cb-new" type="button">Nueva</button>'
+    + '      <button id="cb-close" type="button" aria-label="Cerrar">×</button>'
+    + "    </div>"
+    + "  </div>"
     + '  <div id="cb-messages"></div>'
     + '  <form id="cb-form">'
     + '    <input id="cb-input" type="text" placeholder="Escribí tu consulta..." autocomplete="off" />'
@@ -88,11 +105,13 @@ export function generateWidgetScript(options: {
   var bubble = document.getElementById("cb-bubble");
   var panel = document.getElementById("cb-panel");
   var closeBtn = document.getElementById("cb-close");
+  var newBtn = document.getElementById("cb-new");
   var form = document.getElementById("cb-form");
   var input = document.getElementById("cb-input");
   var sendBtn = document.getElementById("cb-send");
   var messages = document.getElementById("cb-messages");
   var busy = false;
+  var hydrated = false;
 
   function addMsg(text, who) {
     var el = document.createElement("div");
@@ -102,6 +121,42 @@ export function generateWidgetScript(options: {
     messages.scrollTop = messages.scrollHeight;
     return el;
   }
+
+  function resetLocal() {
+    conversationId = null;
+    try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+    messages.innerHTML = "";
+    addMsg("¡Hola! ¿En qué puedo ayudarte?", "bot");
+  }
+
+  function hydrate() {
+    if (!conversationId) {
+      hydrated = true;
+      return;
+    }
+    fetch(CONV_URL + "?business_id=" + encodeURIComponent(BUSINESS_ID) + "&conversation_id=" + encodeURIComponent(conversationId))
+      .then(function (res) {
+        if (!res.ok) throw new Error("no conv");
+        return res.json();
+      })
+      .then(function (data) {
+        conversationId = data.conversation_id;
+        var list = data.mensajes || [];
+        if (list.length) {
+          messages.innerHTML = "";
+          list.forEach(function (m) {
+            addMsg(m.content, m.role === "user" ? "user" : "bot");
+          });
+        }
+      })
+      .catch(function () {
+        try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+        conversationId = null;
+      })
+      .finally(function () { hydrated = true; });
+  }
+
+  hydrate();
 
   function toggle(open) {
     if (open === undefined) open = !panel.classList.contains("open");
@@ -116,6 +171,7 @@ export function generateWidgetScript(options: {
 
   bubble.addEventListener("click", function () { toggle(); });
   closeBtn.addEventListener("click", function () { toggle(false); });
+  newBtn.addEventListener("click", function () { resetLocal(); });
 
   form.addEventListener("submit", function (e) {
     e.preventDefault();
@@ -132,7 +188,11 @@ export function generateWidgetScript(options: {
     fetch(API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ business_id: BUSINESS_ID, mensaje: text })
+      body: JSON.stringify({
+        business_id: BUSINESS_ID,
+        mensaje: text,
+        conversation_id: conversationId
+      })
     })
       .then(function (res) {
         return res.json().then(function (data) {
@@ -142,11 +202,15 @@ export function generateWidgetScript(options: {
       })
       .then(function (data) {
         typing.remove();
+        if (data.conversation_id) {
+          conversationId = data.conversation_id;
+          try { localStorage.setItem(STORAGE_KEY, conversationId); } catch (e) {}
+        }
         addMsg(data.respuesta || "Sin respuesta", "bot");
       })
       .catch(function (err) {
         typing.remove();
-        addMsg("No pude responder ahora. Intentá de nuevo en un momento.", "bot");
+        addMsg(err && err.message ? err.message : "No pude responder ahora. Intentá de nuevo en un momento.", "bot");
         console.error("[Chatbot]", err);
       })
       .finally(function () {

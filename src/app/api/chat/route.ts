@@ -3,13 +3,18 @@ import { generateChatReply } from "@/lib/anthropic";
 import { embedText } from "@/lib/embeddings";
 import { getSupabase, type MatchedChunk } from "@/lib/supabase";
 import { env } from "@/lib/env";
+import {
+  appendConversationMessages,
+  getOrCreateConversation,
+} from "@/lib/conversations";
 
 export const runtime = "nodejs";
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 type ChatBody = {
   business_id?: string;
   mensaje?: string;
+  conversation_id?: string | null;
 };
 
 function missingEnv(): string | null {
@@ -39,6 +44,9 @@ export async function POST(req: NextRequest) {
     const body = (await req.json()) as ChatBody;
     const businessId = String(body.business_id ?? "").trim();
     const mensaje = String(body.mensaje ?? "").trim();
+    const incomingConversationId = body.conversation_id
+      ? String(body.conversation_id).trim()
+      : null;
 
     if (!businessId) {
       return NextResponse.json(
@@ -58,7 +66,7 @@ export async function POST(req: NextRequest) {
 
     const { data: business, error: businessError } = await supabase
       .from("businesses")
-      .select("id, nombre")
+      .select("id, nombre, agenda_habilitada, requiere_sena")
       .eq("id", businessId)
       .maybeSingle();
 
@@ -77,9 +85,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const conversation = await getOrCreateConversation({
+      businessId,
+      conversationId: incomingConversationId,
+    });
+
     const queryEmbedding = await embedText(mensaje);
 
-    // PostgREST acepta el vector como string "[1,2,...]" de forma más fiable
     const { data: matches, error: matchError } = await supabase.rpc(
       "match_document_chunks",
       {
@@ -93,7 +105,7 @@ export async function POST(req: NextRequest) {
       console.error(matchError);
       return NextResponse.json(
         {
-          error: `Error en la búsqueda semántica: ${matchError.message}. Si no ejecutaste el SQL completo, corré la función match_document_chunks en Supabase.`,
+          error: `Error en la búsqueda semántica: ${matchError.message}`,
         },
         { status: 500, headers: corsHeaders() }
       );
@@ -106,11 +118,25 @@ export async function POST(req: NextRequest) {
       businessName: business.nombre,
       contextChunks,
       mensaje,
+      history: conversation.mensajes,
+      agendaHabilitada: Boolean(business.agenda_habilitada),
+      requiereSeña: Boolean(business.requiere_sena),
+      businessId,
+      conversationId: conversation.id,
+    });
+
+    await appendConversationMessages({
+      conversationId: conversation.id,
+      businessId,
+      existing: conversation.mensajes,
+      userMessage: mensaje,
+      assistantMessage: respuesta,
     });
 
     return NextResponse.json(
       {
         respuesta,
+        conversation_id: conversation.id,
         fuentes: chunks.map((c) => ({
           id: c.id,
           similarity: c.similarity,
@@ -139,7 +165,7 @@ export async function OPTIONS() {
 function corsHeaders(): HeadersInit {
   return {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Methods": "POST, OPTIONS, GET",
     "Access-Control-Allow-Headers": "Content-Type",
   };
 }

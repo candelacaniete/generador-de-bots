@@ -1,14 +1,16 @@
 import Link from "next/link";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
+import AgendaPanel from "@/components/AgendaPanel";
 import ChatWidget from "@/components/ChatWidget";
+import CopySnippet from "@/components/CopySnippet";
 import { env } from "@/lib/env";
 import { normalizeAppUrl } from "@/lib/app-url";
 import { getSupabase } from "@/lib/supabase";
-import CopySnippet from "@/components/CopySnippet";
 
 type PageProps = {
   params: Promise<{ business_id: string }>;
+  searchParams: Promise<{ calendar?: string }>;
 };
 
 async function resolveAppUrl(): Promise<string> {
@@ -22,8 +24,9 @@ async function resolveAppUrl(): Promise<string> {
   return "";
 }
 
-export default async function BotPage({ params }: PageProps) {
+export default async function BotPage({ params, searchParams }: PageProps) {
   const { business_id } = await params;
+  const { calendar } = await searchParams;
 
   let business: { id: string; nombre: string; slug: string } | null = null;
 
@@ -66,8 +69,7 @@ export default async function BotPage({ params }: PageProps) {
           {business.nombre}
         </h1>
         <p className="mt-2 text-sm text-slate-600">
-          Probá el chat con la burbuja de abajo a la derecha. Cuando esté listo,
-          pegá el snippet en WordPress.
+          Probá el chat, configurá la agenda y pegá el snippet en WordPress.
         </p>
       </div>
 
@@ -78,9 +80,7 @@ export default async function BotPage({ params }: PageProps) {
         <p className="mt-1 text-sm text-slate-600">
           Copiá y pegá esta línea antes de{" "}
           <code className="text-xs">&lt;/body&gt;</code> (o en un bloque HTML
-          personalizado / footer de WordPress). Carga el{" "}
-          <code className="text-xs">.js</code> desde nuestra app; no hace falta
-          subir ningún archivo al hosting.
+          personalizado / footer de WordPress).
         </p>
 
         <CopySnippet text={embedSnippet} />
@@ -109,6 +109,8 @@ export default async function BotPage({ params }: PageProps) {
           </code>
         </div>
       </section>
+
+      <AgendaPanel businessId={business.id} calendarStatus={calendar ?? null} />
 
       <ChatWidget businessId={business.id} businessName={business.nombre} />
     </main>
