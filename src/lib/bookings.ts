@@ -35,6 +35,12 @@ export type SlotOffer = {
   label: string;
 };
 
+export type DayOffer = {
+  fecha: string;
+  label: string;
+  slots_libres: number;
+};
+
 export async function getCalendarConfig(
   businessId: string
 ): Promise<CalendarConfig | null> {
@@ -284,6 +290,193 @@ async function fetchDbBusyPeriods(
     const end = new Date(start.getTime() + b.duracion_minutos * 60 * 1000);
     return { start, end };
   });
+}
+
+function ymdInTz(date: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+function dayLabel(ymd: string, timeZone: string): string {
+  const d = new Date(`${ymd}T15:00:00.000Z`);
+  return new Intl.DateTimeFormat("es-AR", {
+    timeZone,
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  }).format(d);
+}
+
+async function loadFreeStarts(params: {
+  businessId: string;
+  serviceId?: string | null;
+  from: Date;
+  to: Date;
+}): Promise<{ free: Date[]; duration: number; timezone: string; config: CalendarConfig }> {
+  const config = await getCalendarConfig(params.businessId);
+  if (!config?.google_refresh_token) {
+    throw new Error("Google Calendar no está conectado");
+  }
+
+  let duration = config.duracion_default_minutos;
+  if (params.serviceId) {
+    const services = await listActiveServices(params.businessId);
+    const svc = services.find((s) => s.id === params.serviceId);
+    if (svc) duration = svc.duracion_minutos;
+  }
+
+  const timezone = config.horario_laboral.timezone;
+  const calendar = calendarClientFromRefreshToken(config.google_refresh_token);
+  const calendarId = config.google_calendar_id || "primary";
+  const busy = await fetchBusyPeriods(calendar, calendarId, params.from, params.to);
+  const dbBusy = await fetchDbBusyPeriods(params.businessId, params.from, params.to);
+  const candidates = generateCandidateSlots({
+    from: params.from,
+    to: params.to,
+    durationMinutes: duration,
+    intervalMinutes: config.slot_interval_minutos,
+    horario: config.horario_laboral,
+  });
+
+  return {
+    free: filterFree(candidates, duration, [...busy, ...dbBusy]),
+    duration,
+    timezone,
+    config,
+  };
+}
+
+export async function consultarDiasDisponibles(params: {
+  businessId: string;
+  serviceId?: string | null;
+}): Promise<{ dias: DayOffer[]; timezone: string; mensaje: string }> {
+  const config = await getCalendarConfig(params.businessId);
+  if (!config?.google_refresh_token) {
+    return {
+      dias: [],
+      timezone: DEFAULT_HORARIO.timezone,
+      mensaje: "La agenda aún no está conectada. Derivá al humano.",
+    };
+  }
+
+  const from = new Date(Date.now() + 30 * 60 * 1000);
+  const to = new Date(
+    from.getTime() + config.dias_hacia_adelante * 24 * 60 * 60 * 1000
+  );
+
+  try {
+    const { free, timezone } = await loadFreeStarts({
+      businessId: params.businessId,
+      serviceId: params.serviceId,
+      from,
+      to,
+    });
+
+    const counts = new Map<string, number>();
+    for (const start of free) {
+      const key = ymdInTz(start, timezone);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+
+    const dias = [...counts.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([fecha, slots_libres]) => ({
+        fecha,
+        label: dayLabel(fecha, timezone),
+        slots_libres,
+      }));
+
+    if (!dias.length) {
+      return {
+        dias: [],
+        timezone,
+        mensaje: `No hay días libres en los próximos ${config.dias_hacia_adelante} días. Derivá a un humano.`,
+      };
+    }
+
+    return {
+      dias,
+      timezone,
+      mensaje:
+        "Ofrecé estos DÍAS al usuario. NO pidas nombre/teléfono todavía. Cuando elija un día, llamá consultar_horarios_dia.",
+    };
+  } catch (err) {
+    return {
+      dias: [],
+      timezone: config.horario_laboral.timezone,
+      mensaje: err instanceof Error ? err.message : "Error al consultar días",
+    };
+  }
+}
+
+export async function consultarHorariosDia(params: {
+  businessId: string;
+  serviceId?: string | null;
+  fecha: string;
+  offset?: number;
+  limit?: number;
+}): Promise<{
+  fecha: string;
+  slots: SlotOffer[];
+  offset: number;
+  limit: number;
+  total_dia: number;
+  has_more: boolean;
+  timezone: string;
+  mensaje: string;
+}> {
+  const config = await getCalendarConfig(params.businessId);
+  if (!config?.google_refresh_token) {
+    return {
+      fecha: params.fecha,
+      slots: [],
+      offset: 0,
+      limit: 5,
+      total_dia: 0,
+      has_more: false,
+      timezone: DEFAULT_HORARIO.timezone,
+      mensaje: "Google Calendar no conectado.",
+    };
+  }
+
+  const timezone = config.horario_laboral.timezone;
+  const offset = Math.max(0, params.offset ?? 0);
+  const limit = Math.max(1, Math.min(params.limit ?? 5, 20));
+  const dayStart = new Date(`${params.fecha}T00:00:00.000Z`);
+  const fromRaw = new Date(dayStart.getTime() - 12 * 60 * 60 * 1000);
+  const to = new Date(dayStart.getTime() + 36 * 60 * 60 * 1000);
+  const nowBuf = new Date(Date.now() + 30 * 60 * 1000);
+  const from = fromRaw < nowBuf ? nowBuf : fromRaw;
+
+  const { free, duration } = await loadFreeStarts({
+    businessId: params.businessId,
+    serviceId: params.serviceId,
+    from,
+    to,
+  });
+
+  const daySlots = free.filter((s) => ymdInTz(s, timezone) === params.fecha);
+  const slice = daySlots.slice(offset, offset + limit);
+  const slots = slice.map((s) => toOffer(s, duration, timezone));
+  const has_more = offset + limit < daySlots.length;
+  const restantes = Math.max(0, daySlots.length - offset - slots.length);
+
+  return {
+    fecha: params.fecha,
+    slots,
+    offset,
+    limit,
+    total_dia: daySlots.length,
+    has_more,
+    timezone,
+    mensaje: has_more
+      ? `Mostrá estos ${slots.length} horarios. Preguntá si le conviene alguno o si quiere ver más (quedan ${restantes}). NO pidas nombre/teléfono hasta que elija un horario.`
+      : `Mostrá estos ${slots.length} horarios. Cuando elija uno, usá seleccionar_slot y recién ahí pedí nombre y teléfono.`,
+  };
 }
 
 export async function crearTurno(params: {
