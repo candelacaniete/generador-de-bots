@@ -72,3 +72,49 @@ export async function appendConversationMessages(params: {
   if (error) throw new Error(error.message);
   return mensajes;
 }
+
+export async function patchConversationFlow(
+  conversationId: string,
+  businessId: string,
+  patch: Record<string, unknown>
+) {
+  const supabase = getSupabase();
+  const { data } = await supabase
+    .from("conversations")
+    .select("estado_flujo")
+    .eq("id", conversationId)
+    .eq("business_id", businessId)
+    .maybeSingle();
+
+  const next = {
+    ...((data?.estado_flujo as object) || {}),
+    ...patch,
+  };
+
+  const { error } = await supabase
+    .from("conversations")
+    .update({
+      estado_flujo: next,
+      actualizado_en: new Date().toISOString(),
+    })
+    .eq("id", conversationId)
+    .eq("business_id", businessId);
+
+  if (error) throw new Error(error.message);
+  return next;
+}
+
+export async function getConversationFlow(
+  conversationId: string,
+  businessId: string
+): Promise<Record<string, unknown>> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from("conversations")
+    .select("estado_flujo")
+    .eq("id", conversationId)
+    .eq("business_id", businessId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return (data?.estado_flujo as Record<string, unknown>) ?? {};
+}

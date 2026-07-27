@@ -141,14 +141,14 @@ export async function consultarDisponibilidad(params: {
 
   const freePrimary = filterFree(candidatesPrimary, duration, allBusy);
   const cantidad = params.cantidad ?? 4;
-  const slots = freePrimary.slice(0, cantidad).map((start) => toOffer(start, duration, timezone));
+  const slots = pickSpreadSlots(freePrimary, cantidad, duration, timezone);
 
   if (slots.length > 0) {
     return {
       slots,
       proximo: null,
       timezone,
-      mensaje: `Hay ${slots.length} horario(s) disponible(s) en los próximos ${ventanaPrimaria} días.`,
+      mensaje: `Hay ${slots.length} horario(s) disponible(s) en los próximos ${ventanaPrimaria} días. Ofrecé TODOS estos al usuario con su label. Para crear_turno usá el campo start (ISO) exacto.`,
     };
   }
 
@@ -189,6 +189,43 @@ function toOffer(start: Date, durationMinutes: number, timezone: string): SlotOf
     end: end.toISOString(),
     label: formatSlotLabel(start.toISOString(), timezone),
   };
+}
+
+/** Elige slots repartidos en distintos días (no 4 seguidos del mismo día). */
+function pickSpreadSlots(
+  free: Date[],
+  cantidad: number,
+  durationMinutes: number,
+  timezone: string
+): SlotOffer[] {
+  if (free.length === 0) return [];
+
+  const byDay = new Map<string, Date[]>();
+  for (const start of free) {
+    const key = new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(start);
+    if (!byDay.has(key)) byDay.set(key, []);
+    byDay.get(key)!.push(start);
+  }
+
+  const days = [...byDay.keys()].sort();
+  const picked: Date[] = [];
+  let guard = 0;
+  while (picked.length < cantidad && guard < cantidad * days.length + 5) {
+    const day = days[guard % days.length];
+    const bucket = byDay.get(day);
+    if (bucket && bucket.length > 0) {
+      picked.push(bucket.shift()!);
+    }
+    guard += 1;
+    if (days.every((d) => (byDay.get(d)?.length ?? 0) === 0)) break;
+  }
+
+  return picked.map((start) => toOffer(start, durationMinutes, timezone));
 }
 
 function filterFree(

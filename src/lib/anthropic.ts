@@ -30,6 +30,7 @@ export async function generateChatReply(params: {
   requiereSeña?: boolean;
   businessId: string;
   conversationId: string | null;
+  estadoFlujo?: Record<string, unknown>;
 }): Promise<string> {
   const {
     businessName,
@@ -40,6 +41,7 @@ export async function generateChatReply(params: {
     requiereSeña = false,
     businessId,
     conversationId,
+    estadoFlujo = {},
   } = params;
 
   const client = getAnthropic();
@@ -49,28 +51,35 @@ export async function generateChatReply(params: {
       ? contextChunks.map((c, i) => `[${i + 1}]\n${c}`).join("\n\n")
       : "(Sin contexto documental disponible)";
 
+  const draft = JSON.stringify(estadoFlujo ?? {});
+
   const agendaRules = agendaHabilitada
     ? `
-AGENDA HABILITADA. Podés reservar turnos usando las tools.
-Reglas estrictas:
-- Nunca inventes horarios: usá consultar_disponibilidad.
-- Ofrecé 3-4 horarios concretos; no preguntes "¿cuándo te viene bien?" en abierto.
-- Si no hay slots en 7 días y hay un próximo después, ofrecé solo ese.
-- Si no hay nada en la ventana completa, pedí nombre+teléfono y usá derivar_a_humano.
-- Teléfono obligatorio; email opcional.
-- Si el usuario menciona obra social / autorización, o el servicio tiene requiere_derivacion_humana, NO ofrezcas horarios: pedí datos y derivá.
-- Al crear el turno queda PENDIENTE. ${
+AGENDA HABILITADA. Usá tools para turnos.
+
+REGLAS DURAS (no las rompas):
+1) Para listar qué se puede reservar: SIEMPRE listar_servicios. NO armes la lista desde el PDF.
+2) Nunca inventes horarios: SIEMPRE consultar_disponibilidad.
+3) Ofrecé los slots que devolvió la tool (idealmente de distintos días). Mostrá fecha+hora.
+4) NUNCA digas que el turno quedó reservado/confirmado/pendiente/agendado si crear_turno no devolvió {"ok":true}.
+5) Cuando tengas servicio + horario elegido + nombre + teléfono, DEBES llamar crear_turno (con fecha_hora = start ISO del slot, o slot_index).
+6) Si crear_turno falla, pedí disculpas y NO inventes un turno.
+7) Teléfono obligatorio; email opcional.
+8) Si menciona obra social o el servicio tiene requiere_derivacion_humana=true: NO ofrezcas horarios; pedí datos y derivar_a_humano.
+9) ${
         requiereSeña
-          ? "Después llamá obtener_info_sena y pasá alias/CBU + instrucciones."
-          : "Indicá que el negocio lo contactará para confirmar."
+          ? "Después de crear_turno ok, llamá obtener_info_sena y pasá alias/CBU + instrucciones. El turno queda PENDIENTE hasta que el negocio confirme el pago."
+          : "Después de crear_turno ok, aclará que está PENDIENTE y que el negocio confirmará."
       }
-- Para FAQ usá el contexto documental; para turnos usá tools.`
+10) Estado actual del flujo de reserva (JSON): ${draft}
+`
     : `
 AGENDA NO HABILITADA. No ofrezcas reservar turnos ni inventes disponibilidad.
-Si piden turno, pedí teléfono y sugerí que el negocio los contacte (derivar_a_humano si tenés la tool; si no, solo pedí datos).`;
+Si piden turno, pedí teléfono y usá derivar_a_humano.
+`;
 
   const system = `Sos el asistente virtual de "${businessName}". Respondé en español, claro y amable.
-Usá SOLO la información del contexto documental para datos del negocio (precios, FAQ, etc.). No inventes.
+Usá SOLO el contexto documental para FAQ/precios/info. No inventes datos.
 ${agendaRules}
 
 Contexto documental:
@@ -80,7 +89,7 @@ ${context}`;
   const messages: Msg[] = [
     ...history
       .filter((m) => m.content?.trim())
-      .slice(-12)
+      .slice(-16)
       .map((m) => ({
         role: m.role as "user" | "assistant",
         content: m.content,
@@ -88,9 +97,11 @@ ${context}`;
     { role: "user", content: mensaje },
   ];
 
-  const tools = agendaHabilitada ? BOOKING_TOOLS : BOOKING_TOOLS.filter(
-    (t) => t.name === "derivar_a_humano" || t.name === "obtener_info_sena"
-  );
+  const tools = agendaHabilitada
+    ? BOOKING_TOOLS
+    : BOOKING_TOOLS.filter(
+        (t) => t.name === "derivar_a_humano" || t.name === "obtener_info_sena"
+      );
 
   let response = await client.messages.create({
     model: MODEL,
@@ -101,7 +112,7 @@ ${context}`;
   });
 
   let guard = 0;
-  while (response.stop_reason === "tool_use" && guard < 6) {
+  while (response.stop_reason === "tool_use" && guard < 8) {
     guard += 1;
     const toolUses = response.content.filter(
       (b): b is Anthropic.Messages.ToolUseBlock => b.type === "tool_use"
