@@ -1,54 +1,58 @@
 # Generador de chatbots (Next.js + Supabase)
 
-App web para crear chatbots con IA a partir de un PDF/Word del negocio. Multi-tenant desde el día 1.
+App web para crear chatbots con IA a partir de un PDF/Word del negocio. Multi-tenant desde el día 1. Incluye **reserva de turnos con Google Calendar** (fase 1, seña manual).
 
 ## Stack
 
 - **Next.js** (App Router) + TypeScript + Tailwind
 - **Supabase** (Postgres + pgvector)
-- **Anthropic Claude** (`claude-haiku-4-5-20251001`) para respuestas
-- **OpenAI** (`text-embedding-3-small`) para embeddings (Anthropic no ofrece embeddings)
-- Extracción PDF con **unpdf** (compatible con Vercel serverless)
+- **Anthropic Claude** (`claude-haiku-4-5-20251001`) para respuestas + tool calling
+- **OpenAI** (`text-embedding-3-small`) para embeddings
+- **Google Calendar API** (OAuth del dueño del negocio)
+- Extracción PDF con **unpdf**
 
 ## Setup
 
-1. Creá un proyecto en [Supabase](https://supabase.com) y ejecutá el SQL de `supabase/schema.sql` en el SQL Editor.
-2. Copiá `.env.example` a `.env.local` y completá las claves:
+1. Ejecutá en Supabase SQL Editor:
+   - `supabase/schema.sql`
+   - `supabase/schema_bookings.sql`
+2. Copiá `.env.example` → `.env.local` (o variables en Vercel).
+3. En [Google Cloud Console](https://console.cloud.google.com/):
+   - Creá un OAuth Client ID (Web)
+   - Authorized redirect URI: `https://TU-DOMINIO/api/google/oauth/callback`
+   - Scopes: Calendar + email
+4. `npm install && npm run dev`
 
-```bash
-cp .env.example .env.local
-```
+## Agenda (fase 1)
 
-3. Instalá e iniciá:
+En `/bot/[business_id]`:
 
-```bash
-npm install
-npm run dev
-```
+1. **Conectar Google Calendar** (OAuth)
+2. Activar agenda, definir servicios, alias/CBU si hay seña
+3. El bot ofrece horarios reales, crea eventos `PENDIENTE` en Calendar
+4. Confirmá/cancelá turnos desde la tabla de la misma página
+5. Cron cada 10 min expira pendientes y libera el slot (`/api/cron/expire-bookings`)
 
-Abrí [http://localhost:3000](http://localhost:3000).
+Reglas del bot:
 
-## Flujo
+- Teléfono obligatorio, email opcional
+- Ofrece 3–4 slots concretos (ventana 7 días; si no hay, el próximo en 14)
+- Sin slots → deriva a humano
+- Obra social / servicio con flag → deriva (no agenda automático)
 
-1. `/nuevo` — nombre del negocio + subida de `.docx`/`.pdf`
-2. Backend: extrae texto → chunking (~500 tokens) → embeddings → guarda en Supabase
-3. `/bot/[business_id]` — preview del chat + descarga del snippet JS embebible
-4. `POST /api/chat` — RAG con similitud coseno (pgvector) + Claude
+## Persistencia de chat
 
-## Endpoints
+El widget guarda `conversation_id` en `localStorage` y rehidrata el historial al reabrir la burbuja.
+
+## Endpoints principales
 
 | Método | Ruta | Descripción |
 |--------|------|-------------|
-| `POST` | `/api/upload` | FormData: `nombre`, `archivo` |
-| `POST` | `/api/chat` | JSON: `{ business_id, mensaje }` |
-| `GET`  | `/api/widget/[business_id]` | Descarga el `.js` standalone |
-
-## Snippet WordPress
-
-Descargá el script desde la página del bot y pegalo antes de `</body>`:
-
-```html
-<script src="https://tu-dominio.com/ruta/al/chatbot.js"></script>
-```
-
-El archivo es vanilla JS autocontenido (CSS + UI) con el `business_id` hardcodeado.
+| `POST` | `/api/upload` | Crear bot desde PDF/DOCX |
+| `POST` | `/api/chat` | Chat RAG + tools de agenda (`conversation_id` opcional) |
+| `GET` | `/api/conversations` | Rehidratar historial |
+| `GET` | `/api/widget/[business_id]` | Script embebible |
+| `GET` | `/api/google/oauth/start` | Iniciar OAuth |
+| `GET/PUT` | `/api/agenda/config` | Config agenda/servicios |
+| `GET/POST` | `/api/bookings` | Listar / confirmar / cancelar |
+| `GET` | `/api/cron/expire-bookings` | Expirar pendientes |
