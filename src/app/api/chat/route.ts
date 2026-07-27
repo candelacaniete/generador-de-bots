@@ -123,6 +123,7 @@ export async function POST(req: NextRequest) {
       requiereSeña: Boolean(business.requiere_sena),
       businessId,
       conversationId: conversation.id,
+      estadoFlujo: conversation.estado_flujo,
     });
 
     await appendConversationMessages({
