@@ -66,7 +66,7 @@ export const BOOKING_TOOLS: Anthropic.Messages.Tool[] = [
     },
   },
   {
-    name: "obtener_info_seña",
+    name: "obtener_info_sena",
     description:
       "Obtiene alias/CBU e instrucciones de seña del negocio, si requiere seña.",
     input_schema: {
@@ -192,7 +192,7 @@ export async function runBookingTool(
             "Turno creado en estado pendiente. Informá al usuario cómo confirmar (seña o contacto del negocio).",
         });
       }
-      case "obtener_info_seña": {
+      case "obtener_info_sena": {
         const supabase = getSupabase();
         const { data, error } = await supabase
           .from("businesses")
