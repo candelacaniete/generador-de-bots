@@ -1,6 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { env } from "@/lib/env";
-import { BOOKING_TOOLS, runBookingTool } from "@/lib/booking-tools";
+import {
+  BOOKING_TOOLS,
+  maybeAutoCreateBooking,
+  runBookingTool,
+} from "@/lib/booking-tools";
 
 const MODEL = "claude-haiku-4-5-20251001";
 
@@ -55,31 +59,34 @@ export async function generateChatReply(params: {
 
   const agendaRules = agendaHabilitada
     ? `
-AGENDA HABILITADA. Usá tools para turnos.
-
-REGLAS DURAS (no las rompas):
-1) Para listar qué se puede reservar: SIEMPRE listar_servicios. NO armes la lista desde el PDF.
-2) Nunca inventes horarios: SIEMPRE consultar_disponibilidad.
-3) Ofrecé los slots que devolvió la tool (idealmente de distintos días). Mostrá fecha+hora.
-4) NUNCA digas que el turno quedó reservado/confirmado/pendiente/agendado si crear_turno no devolvió {"ok":true}.
-5) Cuando tengas servicio + horario elegido + nombre + teléfono, DEBES llamar crear_turno (con fecha_hora = start ISO del slot, o slot_index).
-6) Si crear_turno falla, pedí disculpas y NO inventes un turno.
-7) Teléfono obligatorio; email opcional.
-8) Si menciona obra social o el servicio tiene requiere_derivacion_humana=true: NO ofrezcas horarios; pedí datos y derivar_a_humano.
-9) ${
+AGENDA HABILITADA. Flujo OBLIGATORIO de reserva (en este orden):
+1) listar_servicios (si hay >1, preguntá cuál; si hay 1, seguí)
+2) consultar_dias_disponibles → ofrecé DÍAS (no horarios todavía). NO pidas nombre/teléfono.
+3) Usuario elige día → consultar_horarios_dia(fecha, offset=0, limit=5) → ofrecé hasta 5 horarios.
+4) Si pide más horarios → consultar_horarios_dia con offset+=5 del mismo día.
+5) Usuario elige un horario → seleccionar_slot(slot_index) 
+6) Recién ahí pedí nombre + teléfono (email opcional)
+7) crear_turno(nombre, telefono, email?) — SIN esto NO digas que quedó reservado
+8) ${
         requiereSeña
-          ? "Después de crear_turno ok, llamá obtener_info_sena y pasá alias/CBU + instrucciones. El turno queda PENDIENTE hasta que el negocio confirme el pago."
-          : "Después de crear_turno ok, aclará que está PENDIENTE y que el negocio confirmará."
+          ? "obtener_info_sena y pasá alias/CBU + instrucciones (turno queda pendiente)"
+          : "Aclará que quedó PENDIENTE y el negocio confirmará"
       }
-10) Estado actual del flujo de reserva (JSON): ${draft}
+
+PROHIBIDO:
+- Pedir nombre/teléfono antes de elegir día y horario
+- Inventar días/horarios (siempre tools)
+- Decir "reservado/agendado/registrado" sin crear_turno ok:true
+- Usar el PDF como lista de servicios reservables
+
+Estado del flujo: ${draft}
 `
     : `
-AGENDA NO HABILITADA. No ofrezcas reservar turnos ni inventes disponibilidad.
-Si piden turno, pedí teléfono y usá derivar_a_humano.
+AGENDA NO HABILITADA. No ofrezcas turnos. Si piden turno, pedí teléfono y derivar_a_humano.
 `;
 
-  const system = `Sos el asistente virtual de "${businessName}". Respondé en español, claro y amable.
-Usá SOLO el contexto documental para FAQ/precios/info. No inventes datos.
+  const system = `Sos el asistente virtual de "${businessName}". Español, claro y amable.
+FAQ/precios: solo del contexto documental. Turnos: solo tools.
 ${agendaRules}
 
 Contexto documental:
@@ -103,6 +110,8 @@ ${context}`;
         (t) => t.name === "derivar_a_humano" || t.name === "obtener_info_sena"
       );
 
+  let createdBookingThisTurn = false;
+
   let response = await client.messages.create({
     model: MODEL,
     max_tokens: 1024,
@@ -125,6 +134,14 @@ ${context}`;
         tool.input as Record<string, unknown>,
         { businessId, conversationId }
       );
+      if (tool.name === "crear_turno") {
+        try {
+          const parsed = JSON.parse(result) as { ok?: boolean };
+          if (parsed.ok) createdBookingThisTurn = true;
+        } catch {
+          /* ignore */
+        }
+      }
       toolResults.push({
         type: "tool_result",
         tool_use_id: tool.id,
@@ -144,7 +161,20 @@ ${context}`;
     });
   }
 
-  const text = response.content
+  // Safety net: slot elegido + teléfono en el mensaje → crear turno sí o sí
+  if (agendaHabilitada && !createdBookingThisTurn) {
+    const auto = await maybeAutoCreateBooking({
+      businessId,
+      conversationId,
+      userMessage: mensaje,
+      requiereSena: requiereSeña,
+    });
+    if (auto.created && auto.summary) {
+      return auto.summary;
+    }
+  }
+
+  let text = response.content
     .filter((b): b is Anthropic.Messages.TextBlock => b.type === "text")
     .map((b) => b.text)
     .join("\n")
@@ -152,6 +182,16 @@ ${context}`;
 
   if (!text) {
     throw new Error("Claude no devolvió texto");
+  }
+
+  // Si el modelo afirma reserva sin tool ok, corregir
+  if (
+    agendaHabilitada &&
+    !createdBookingThisTurn &&
+    /(reservad|agendad|registrad|confirmad).{0,40}(turno|cita)/i.test(text)
+  ) {
+    text +=
+      "\n\n(Nota: todavía no pude confirmar el bloqueo en la agenda. ¿Me repetís nombre y teléfono para reintentar?)";
   }
 
   return text;

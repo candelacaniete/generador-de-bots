@@ -2,7 +2,8 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { getSupabase } from "@/lib/supabase";
 import {
   confirmarTurno,
-  consultarDisponibilidad,
+  consultarDiasDisponibles,
+  consultarHorariosDia,
   cancelarTurno,
   crearTurno,
   listActiveServices,
@@ -17,7 +18,7 @@ export const BOOKING_TOOLS: Anthropic.Messages.Tool[] = [
   {
     name: "listar_servicios",
     description:
-      "Lista SOLO los servicios reservables del negocio (tabla services). Obligatorio antes de ofrecer turnos. No uses el PDF para armar la lista de reserva.",
+      "Lista servicios reservables. Si hay más de uno, preguntá cuál. Si hay uno solo, seguí sin preguntar. NO uses el PDF.",
     input_schema: {
       type: "object",
       properties: {},
@@ -25,24 +26,51 @@ export const BOOKING_TOOLS: Anthropic.Messages.Tool[] = [
     },
   },
   {
-    name: "consultar_disponibilidad",
+    name: "consultar_dias_disponibles",
     description:
-      "Consulta horarios libres reales en Google Calendar. Nunca inventes horarios. Devolve slots con start ISO; ese start exacto se usa en crear_turno.",
+      "Devuelve días con turnos libres. Primer paso de agenda. NO pidas nombre/teléfono todavía.",
     input_schema: {
       type: "object",
       properties: {
-        service_id: {
+        service_id: { type: "string" },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "consultar_horarios_dia",
+    description:
+      "Horarios libres de UN día (YYYY-MM-DD). Por defecto 5. Si el usuario pide más, llamá de nuevo con offset mayor.",
+    input_schema: {
+      type: "object",
+      properties: {
+        service_id: { type: "string" },
+        fecha: {
           type: "string",
-          description: "ID del servicio de listar_servicios",
+          description: "Fecha YYYY-MM-DD del día elegido",
         },
-        fecha_desde: {
-          type: "string",
-          description: "ISO datetime opcional desde cuándo buscar",
-        },
-        cantidad: {
+        offset: {
           type: "number",
-          description: "Cantidad de slots a ofrecer (default 4)",
+          description: "Desde qué horario (0, 5, 10...)",
         },
+        limit: {
+          type: "number",
+          description: "Cuántos horarios devolver (default 5)",
+        },
+      },
+      required: ["fecha"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "seleccionar_slot",
+    description:
+      "Guarda el horario elegido (slot_index 0-based de los últimos horarios mostrados, o start ISO). Después pedí nombre y teléfono.",
+    input_schema: {
+      type: "object",
+      properties: {
+        slot_index: { type: "number" },
+        fecha_hora: { type: "string" },
       },
       additionalProperties: false,
     },
@@ -50,21 +78,12 @@ export const BOOKING_TOOLS: Anthropic.Messages.Tool[] = [
   {
     name: "crear_turno",
     description:
-      "Crea el turno pendiente y bloquea el slot en Google Calendar. OBLIGATORIO antes de decirle al usuario que quedó reservado. Usá fecha_hora = start ISO de un slot ofrecido, o slot_index (0-based).",
+      "Crea el turno pendiente en DB + Google Calendar. OBLIGATORIO cuando ya hay slot seleccionado + nombre + teléfono. Sin esto NO digas que quedó reservado.",
     input_schema: {
       type: "object",
       properties: {
         service_id: { type: "string" },
         servicio: { type: "string" },
-        fecha_hora: {
-          type: "string",
-          description: "ISO datetime exacto del slot (campo start)",
-        },
-        slot_index: {
-          type: "number",
-          description: "Índice del slot ofrecido (0,1,2...) si no pasás fecha_hora",
-        },
-        duracion_minutos: { type: "number" },
         nombre_cliente: { type: "string" },
         telefono_cliente: { type: "string" },
         email_cliente: { type: "string" },
@@ -77,7 +96,7 @@ export const BOOKING_TOOLS: Anthropic.Messages.Tool[] = [
   {
     name: "obtener_info_sena",
     description:
-      "Obtiene alias/CBU e instrucciones de seña. Llamala después de crear_turno si el negocio requiere seña.",
+      "Alias/CBU e instrucciones de seña. Llamala después de crear_turno si el negocio requiere seña.",
     input_schema: {
       type: "object",
       properties: {},
@@ -87,7 +106,7 @@ export const BOOKING_TOOLS: Anthropic.Messages.Tool[] = [
   {
     name: "derivar_a_humano",
     description:
-      "Guarda lead para seguimiento manual (sin slots, obra social, o servicio con requiere_derivacion_humana).",
+      "Lead manual (sin slots / obra social / requiere_derivacion_humana).",
     input_schema: {
       type: "object",
       properties: {
@@ -103,19 +122,17 @@ export const BOOKING_TOOLS: Anthropic.Messages.Tool[] = [
   },
   {
     name: "confirmar_turno",
-    description: "Confirma un turno pendiente ya creado (turno_id real).",
+    description: "Confirma un turno pendiente existente.",
     input_schema: {
       type: "object",
-      properties: {
-        turno_id: { type: "string" },
-      },
+      properties: { turno_id: { type: "string" } },
       required: ["turno_id"],
       additionalProperties: false,
     },
   },
   {
     name: "cancelar_turno",
-    description: "Cancela un turno y libera el evento en Google Calendar.",
+    description: "Cancela un turno y libera Calendar.",
     input_schema: {
       type: "object",
       properties: {
@@ -169,38 +186,103 @@ export async function runBookingTool(
           })),
         });
       }
-      case "consultar_disponibilidad": {
-        const result = await consultarDisponibilidad({
-          businessId: ctx.businessId,
-          serviceId: (input.service_id as string) || null,
-          fechaDesde: (input.fecha_desde as string) || null,
-          cantidad: Number(input.cantidad ?? 4),
-        });
 
+      case "consultar_dias_disponibles": {
+        const serviceId = (input.service_id as string) || null;
+        const result = await consultarDiasDisponibles({
+          businessId: ctx.businessId,
+          serviceId,
+        });
         if (ctx.conversationId) {
           await patchConversationFlow(ctx.conversationId, ctx.businessId, {
+            selected_service_id: serviceId,
+            last_dias: result.dias,
+            selected_slot: null,
+            last_slots: [],
+            day_slots_offset: 0,
+          });
+        }
+        return JSON.stringify(result);
+      }
+
+      case "consultar_horarios_dia": {
+        const serviceId = (input.service_id as string) || null;
+        const fecha = String(input.fecha);
+        const offset = Number(input.offset ?? 0);
+        const limit = Number(input.limit ?? 5);
+        const result = await consultarHorariosDia({
+          businessId: ctx.businessId,
+          serviceId,
+          fecha,
+          offset,
+          limit,
+        });
+        if (ctx.conversationId) {
+          await patchConversationFlow(ctx.conversationId, ctx.businessId, {
+            selected_service_id: serviceId,
+            selected_fecha: fecha,
             last_slots: result.slots,
-            selected_service_id: (input.service_id as string) || null,
-            timezone: result.timezone,
+            day_slots_offset: offset,
+            day_slots_has_more: result.has_more,
+            day_slots_total: result.total_dia,
+          });
+        }
+        return JSON.stringify(result);
+      }
+
+      case "seleccionar_slot": {
+        if (!ctx.conversationId) {
+          return JSON.stringify({ error: "Sin conversation_id" });
+        }
+        const flow = await getConversationFlow(
+          ctx.conversationId,
+          ctx.businessId
+        );
+        const lastSlots = (flow.last_slots as SlotOffer[] | undefined) ?? [];
+        let selected: SlotOffer | null = null;
+
+        if (input.slot_index !== undefined && input.slot_index !== null) {
+          selected = lastSlots[Number(input.slot_index)] ?? null;
+        } else if (input.fecha_hora) {
+          const raw = String(input.fecha_hora);
+          selected =
+            lastSlots.find((s) => s.start === raw) ||
+            lastSlots.find((s) => s.label.toLowerCase().includes(raw.toLowerCase())) ||
+            null;
+        }
+
+        if (!selected) {
+          return JSON.stringify({
+            error: "No pude identificar el horario. Pedile que elija 1, 2, 3...",
+            last_slots: lastSlots,
           });
         }
 
-        return JSON.stringify(result);
+        await patchConversationFlow(ctx.conversationId, ctx.businessId, {
+          selected_slot: selected.start,
+          selected_slot_label: selected.label,
+        });
+
+        return JSON.stringify({
+          ok: true,
+          selected_slot: selected.start,
+          label: selected.label,
+          aviso:
+            "Horario guardado. Ahora pedí nombre completo y teléfono (email opcional) y llamá crear_turno.",
+        });
       }
+
       case "crear_turno": {
         const services = await listActiveServices(ctx.businessId);
         const flow = ctx.conversationId
           ? await getConversationFlow(ctx.conversationId, ctx.businessId)
           : {};
 
-        let serviceId = (input.service_id as string) || null;
-        if (
-          !serviceId &&
-          typeof flow.selected_service_id === "string" &&
-          flow.selected_service_id
-        ) {
-          serviceId = flow.selected_service_id;
-        }
+        let serviceId =
+          (input.service_id as string) ||
+          (typeof flow.selected_service_id === "string"
+            ? flow.selected_service_id
+            : null);
 
         let svc = serviceId
           ? services.find((s) => s.id === serviceId) ?? null
@@ -210,11 +292,14 @@ export async function runBookingTool(
           const want = normalizeName(String(input.servicio));
           svc =
             services.find((s) => normalizeName(s.nombre) === want) ||
-            services.find((s) => normalizeName(s.nombre).includes(want) || want.includes(normalizeName(s.nombre))) ||
+            services.find(
+              (s) =>
+                normalizeName(s.nombre).includes(want) ||
+                want.includes(normalizeName(s.nombre))
+            ) ||
             null;
           if (svc) serviceId = svc.id;
         }
-
         if (!svc && services.length === 1) {
           svc = services[0];
           serviceId = svc.id;
@@ -223,84 +308,25 @@ export async function runBookingTool(
         if (svc?.requiere_derivacion_humana) {
           return JSON.stringify({
             error:
-              "Este servicio requiere derivación humana. No crear turno automático. Usá derivar_a_humano.",
+              "Este servicio requiere derivación humana. Usá derivar_a_humano.",
           });
         }
 
-        const lastSlots = (flow.last_slots as SlotOffer[] | undefined) ?? [];
-        let fechaHora = input.fecha_hora ? String(input.fecha_hora) : "";
-
-        if (
-          (input.slot_index !== undefined && input.slot_index !== null) ||
-          (!fechaHora && lastSlots.length === 1)
-        ) {
-          const idx =
-            input.slot_index !== undefined && input.slot_index !== null
-              ? Number(input.slot_index)
-              : 0;
-          const slot = lastSlots[idx];
-          if (!slot) {
-            return JSON.stringify({
-              error: `slot_index ${idx} inválido. Slots disponibles: ${JSON.stringify(lastSlots)}`,
-            });
-          }
-          fechaHora = slot.start;
-        }
-
-        // Si el modelo inventó una fecha que no está en last_slots, intentar matchear por hora
-        if (fechaHora && lastSlots.length) {
-          const exact = lastSlots.find((s) => s.start === fechaHora);
-          if (!exact) {
-            const parsed = Date.parse(fechaHora);
-            const byTime = Number.isFinite(parsed)
-              ? lastSlots.find((s) => {
-                  const a = new Date(s.start);
-                  const b = new Date(parsed);
-                  return (
-                    a.getUTCFullYear() === b.getUTCFullYear() &&
-                    a.getUTCMonth() === b.getUTCMonth() &&
-                    a.getUTCDate() === b.getUTCDate() &&
-                    a.getUTCHours() === b.getUTCHours() &&
-                    a.getUTCMinutes() === b.getUTCMinutes()
-                  );
-                })
-              : null;
-            if (byTime) {
-              fechaHora = byTime.start;
-            } else {
-              // Match "10:30" style against labels
-              const raw = String(input.fecha_hora || "");
-              const hm = raw.match(/\b(\d{1,2}):(\d{2})\b/);
-              if (hm) {
-                const labelHit = lastSlots.find((s) =>
-                  s.label.includes(`${hm[1].padStart(2, "0")}:${hm[2]}`) ||
-                  s.label.includes(`${Number(hm[1])}:${hm[2]}`)
-                );
-                if (labelHit) fechaHora = labelHit.start;
-              }
-            }
-          }
-        }
-
+        const fechaHora =
+          typeof flow.selected_slot === "string" ? flow.selected_slot : null;
         if (!fechaHora) {
           return JSON.stringify({
             error:
-              "Falta fecha_hora o slot_index. Primero consultá disponibilidad y usá el start ISO de un slot.",
-            last_slots: lastSlots,
+              "No hay horario seleccionado. Primero seleccionar_slot después de consultar_horarios_dia.",
           });
         }
-
-        const duracion =
-          Number(input.duracion_minutos) ||
-          svc?.duracion_minutos ||
-          30;
 
         const created = await crearTurno({
           businessId: ctx.businessId,
           serviceId: svc?.id ?? serviceId,
           servicio: String(input.servicio || svc?.nombre || "Turno"),
           fechaHoraIso: fechaHora,
-          duracionMinutos: duracion,
+          duracionMinutos: svc?.duracion_minutos || 30,
           nombreCliente: String(input.nombre_cliente),
           telefonoCliente: String(input.telefono_cliente),
           emailCliente: (input.email_cliente as string) || null,
@@ -312,7 +338,6 @@ export async function runBookingTool(
           await patchConversationFlow(ctx.conversationId, ctx.businessId, {
             last_booking_id: created.bookingId,
             last_booking_estado: created.estado,
-            selected_slot: fechaHora,
           });
         }
 
@@ -320,10 +345,12 @@ export async function runBookingTool(
           ok: true,
           ...created,
           fecha_hora_usada: fechaHora,
+          label: flow.selected_slot_label ?? null,
           aviso:
-            "Turno REAL creado en estado pendiente y bloqueado en Google Calendar. Solo ahora podés decirle al usuario que quedó reservado como pendiente.",
+            "Turno REAL creado (pendiente) y bloqueado en Google Calendar.",
         });
       }
+
       case "obtener_info_sena": {
         const supabase = getSupabase();
         const { data, error } = await supabase
@@ -338,6 +365,7 @@ export async function runBookingTool(
           instrucciones_sena: data?.instrucciones_sena ?? null,
         });
       }
+
       case "derivar_a_humano": {
         const lead = {
           derivado: true,
@@ -348,35 +376,30 @@ export async function runBookingTool(
           servicio: (input.servicio as string) || null,
           motivo: String(input.motivo ?? "Derivación manual"),
         };
-
         if (ctx.conversationId) {
           await patchConversationFlow(ctx.conversationId, ctx.businessId, {
             lead,
           });
         }
+        return JSON.stringify({ ok: true, lead });
+      }
 
-        return JSON.stringify({
-          ok: true,
-          mensaje:
-            "Datos guardados. Avisá al usuario que el negocio lo va a contactar.",
-          lead,
-        });
-      }
       case "confirmar_turno": {
-        const result = await confirmarTurno(
-          String(input.turno_id),
-          ctx.businessId
+        return JSON.stringify(
+          await confirmarTurno(String(input.turno_id), ctx.businessId)
         );
-        return JSON.stringify(result);
       }
+
       case "cancelar_turno": {
-        const result = await cancelarTurno(
-          String(input.turno_id),
-          ctx.businessId,
-          (input.motivo as string) || undefined
+        return JSON.stringify(
+          await cancelarTurno(
+            String(input.turno_id),
+            ctx.businessId,
+            (input.motivo as string) || undefined
+          )
         );
-        return JSON.stringify(result);
       }
+
       default:
         return JSON.stringify({ error: `Tool desconocida: ${name}` });
     }
@@ -386,4 +409,97 @@ export async function runBookingTool(
       error: err instanceof Error ? err.message : "Error en la tool",
     });
   }
+}
+
+/** Safety net: si hay slot + teléfono en el mensaje y aún no hay booking, crea el turno. */
+export async function maybeAutoCreateBooking(params: {
+  businessId: string;
+  conversationId: string | null;
+  userMessage: string;
+  requiereSena: boolean;
+}): Promise<{ created: boolean; summary?: string; error?: string }> {
+  if (!params.conversationId) return { created: false };
+
+  const flow = await getConversationFlow(
+    params.conversationId,
+    params.businessId
+  );
+  if (flow.last_booking_id) return { created: false };
+  if (typeof flow.selected_slot !== "string" || !flow.selected_slot) {
+    return { created: false };
+  }
+
+  const phoneMatch = params.userMessage.match(
+    /(?:\+?\d[\d\s\-()]{7,}\d)/
+  );
+  if (!phoneMatch) return { created: false };
+
+  const telefono = phoneMatch[0].replace(/[^\d+]/g, "");
+  // Nombre: texto antes del teléfono, limpiando email
+  let nombre = params.userMessage
+    .replace(phoneMatch[0], " ")
+    .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, " ")
+    .replace(/[,;|]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (nombre.length < 2) nombre = "Cliente";
+
+  const emailMatch = params.userMessage.match(
+    /[\w.+-]+@[\w-]+\.[\w.-]+/
+  );
+
+  const resultRaw = await runBookingTool(
+    "crear_turno",
+    {
+      nombre_cliente: nombre,
+      telefono_cliente: telefono,
+      email_cliente: emailMatch?.[0] || undefined,
+    },
+    {
+      businessId: params.businessId,
+      conversationId: params.conversationId,
+    }
+  );
+
+  const parsed = JSON.parse(resultRaw) as {
+    ok?: boolean;
+    error?: string;
+    bookingId?: string;
+    label?: string;
+    fecha_hora_usada?: string;
+  };
+
+  if (!parsed.ok) {
+    return { created: false, error: parsed.error };
+  }
+
+  let senaText = "";
+  if (params.requiereSena) {
+    const senaRaw = await runBookingTool(
+      "obtener_info_sena",
+      {},
+      {
+        businessId: params.businessId,
+        conversationId: params.conversationId,
+      }
+    );
+    const sena = JSON.parse(senaRaw) as {
+      alias_cbu?: string;
+      instrucciones_sena?: string;
+    };
+    senaText = `\n\nPara confirmar el turno (queda pendiente):\n${
+      sena.instrucciones_sena || "Transferí la seña"
+    }${sena.alias_cbu ? `\nAlias/CBU: ${sena.alias_cbu}` : ""}`;
+  }
+
+  const summary = `¡Listo! Reservamos tu turno en estado *pendiente*.
+- Horario: ${flow.selected_slot_label || parsed.fecha_hora_usada}
+- Nombre: ${nombre}
+- Teléfono: ${telefono}
+${emailMatch ? `- Email: ${emailMatch[0]}` : ""}
+- ID: ${parsed.bookingId}${senaText}
+
+El horario ya quedó bloqueado en la agenda.`;
+
+  return { created: true, summary };
 }
