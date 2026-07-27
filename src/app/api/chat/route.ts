@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateChatReply } from "@/lib/anthropic";
+import { handleBookingOrchestrator } from "@/lib/booking-orchestrator";
 import { embedText } from "@/lib/embeddings";
 import { getSupabase, type MatchedChunk } from "@/lib/supabase";
 import { env } from "@/lib/env";
@@ -90,8 +91,37 @@ export async function POST(req: NextRequest) {
       conversationId: incomingConversationId,
     });
 
-    const queryEmbedding = await embedText(mensaje);
+    // Turnos: orquestador determinístico (no depende de tool-calling del modelo)
+    if (business.agenda_habilitada) {
+      const booking = await handleBookingOrchestrator({
+        businessId,
+        conversationId: conversation.id,
+        mensaje,
+        requiereSena: Boolean(business.requiere_sena),
+      });
 
+      if (booking.handled && booking.respuesta) {
+        await appendConversationMessages({
+          conversationId: conversation.id,
+          businessId,
+          existing: conversation.mensajes,
+          userMessage: mensaje,
+          assistantMessage: booking.respuesta,
+        });
+
+        return NextResponse.json(
+          {
+            respuesta: booking.respuesta,
+            conversation_id: conversation.id,
+            fuentes: [],
+            booking: true,
+          },
+          { headers: corsHeaders() }
+        );
+      }
+    }
+
+    const queryEmbedding = await embedText(mensaje);
     const { data: matches, error: matchError } = await supabase.rpc(
       "match_document_chunks",
       {
@@ -120,10 +150,6 @@ export async function POST(req: NextRequest) {
       mensaje,
       history: conversation.mensajes,
       agendaHabilitada: Boolean(business.agenda_habilitada),
-      requiereSeña: Boolean(business.requiere_sena),
-      businessId,
-      conversationId: conversation.id,
-      estadoFlujo: conversation.estado_flujo,
     });
 
     await appendConversationMessages({
