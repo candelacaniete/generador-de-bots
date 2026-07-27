@@ -61,7 +61,7 @@ Reglas estrictas:
 - Si el usuario menciona obra social / autorización, o el servicio tiene requiere_derivacion_humana, NO ofrezcas horarios: pedí datos y derivá.
 - Al crear el turno queda PENDIENTE. ${
         requiereSeña
-          ? "Después llamá obtener_info_seña y pasá alias/CBU + instrucciones."
+          ? "Después llamá obtener_info_sena y pasá alias/CBU + instrucciones."
           : "Indicá que el negocio lo contactará para confirmar."
       }
 - Para FAQ usá el contexto documental; para turnos usá tools.`
@@ -89,7 +89,7 @@ ${context}`;
   ];
 
   const tools = agendaHabilitada ? BOOKING_TOOLS : BOOKING_TOOLS.filter(
-    (t) => t.name === "derivar_a_humano" || t.name === "obtener_info_seña"
+    (t) => t.name === "derivar_a_humano" || t.name === "obtener_info_sena"
   );
 
   let response = await client.messages.create({
