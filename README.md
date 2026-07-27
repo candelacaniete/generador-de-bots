@@ -31,7 +31,8 @@ En `/bot/[business_id]`:
 2. Activar agenda, definir servicios, alias/CBU si hay seña
 3. El bot ofrece horarios reales, crea eventos `PENDIENTE` en Calendar
 4. Confirmá/cancelá turnos desde la tabla de la misma página
-5. Cron cada 10 min expira pendientes y libera el slot (`/api/cron/expire-bookings`)
+5. Cron diario (Hobby) expira pendientes (`/api/cron/expire-bookings`).  
+   En plan Hobby Vercel solo permite 1 cron/día. Si necesitás cada 10 min, usá un cron externo (cron-job.org) pegándole a esa URL con header `Authorization: Bearer CRON_SECRET`.
 
 Reglas del bot:
 
