@@ -11,12 +11,18 @@ export default function HomePage() {
         Subí un documento con la info de tu negocio y obtené un asistente listo
         para embeber en WordPress o cualquier sitio web.
       </p>
-      <div className="mt-8">
+      <div className="mt-8 flex flex-wrap gap-3">
         <Link
-          href="/nuevo"
+          href="/login"
           className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
         >
-          Crear mi chatbot
+          Ingresar al panel
+        </Link>
+        <Link
+          href="/admin"
+          className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-800"
+        >
+          Admin
         </Link>
       </div>
     </main>

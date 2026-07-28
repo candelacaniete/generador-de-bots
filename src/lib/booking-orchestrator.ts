@@ -18,6 +18,7 @@ export type BookingStep =
   | "pick_day"
   | "pick_time"
   | "ask_contact"
+  | "confirm_summary"
   | "done";
 
 type FlowState = {
@@ -35,6 +36,11 @@ type FlowState = {
   last_booking_id?: string | null;
   needs_human?: boolean;
   service_duration?: number;
+  lead?: {
+    nombre_cliente?: string;
+    telefono_cliente?: string;
+    email_cliente?: string | null;
+  };
 };
 
 function norm(s: string): string {
@@ -57,6 +63,16 @@ function wantsMoreTimes(msg: string): boolean {
 
 function wantsCancelFlow(msg: string): boolean {
   return /(cancelar|olvidate|olvidá|no quiero|dejalo|dejá|salir)/i.test(msg);
+}
+
+function wantsYes(msg: string): boolean {
+  return /^(si|sí|ok|dale|confirmo|correcto|esta bien|está bien|todo bien|perfecto|yes)\b/i.test(
+    msg.trim()
+  );
+}
+
+function wantsNo(msg: string): boolean {
+  return /^(no|mal|incorrecto|cambiar|corregir|editar)\b/i.test(msg.trim());
 }
 
 function parsePhone(msg: string): string | null {
@@ -404,6 +420,99 @@ export async function handleBookingOrchestrator(params: {
       };
     }
 
+    await patchConversationFlow(conversationId, businessId, {
+      booking_step: "confirm_summary",
+      lead: {
+        nombre_cliente: nombre,
+        telefono_cliente: phone,
+        email_cliente: email,
+      },
+    });
+
+    return {
+      handled: true,
+      respuesta: `Perfecto, revisemos antes de bloquear el turno:
+
+- Servicio: **${flow.selected_service_nombre}**
+- Horario: **${flow.selected_slot_label}**
+- Nombre: **${nombre}**
+- Teléfono: **${phone}**${email ? `\n- Email: **${email}**` : ""}
+
+¿Está todo bien así? Respondé **sí** para confirmar o **no** para corregir los datos.`,
+    };
+  }
+
+  // ---- confirm_summary ----
+  if (step === "confirm_summary") {
+    const lead = flow.lead || {};
+
+    if (wantsNo(mensaje)) {
+      await patchConversationFlow(conversationId, businessId, {
+        booking_step: "ask_contact",
+        lead: {},
+      });
+      return {
+        handled: true,
+        respuesta:
+          "Dale, mandame de nuevo **nombre + teléfono** (email opcional) y armamos el resumen otra vez.",
+      };
+    }
+
+    // Allow inline corrections without saying "no"
+    const phoneFix = parsePhone(mensaje);
+    const emailFix = parseEmail(mensaje);
+    if (phoneFix && !wantsYes(mensaje)) {
+      const nombreFix = parseName(
+        mensaje,
+        phoneFix,
+        emailFix || lead.email_cliente || null
+      );
+      const nombre =
+        nombreFix !== "Cliente" ? nombreFix : lead.nombre_cliente || "Cliente";
+      const email = emailFix || lead.email_cliente || null;
+      await patchConversationFlow(conversationId, businessId, {
+        booking_step: "confirm_summary",
+        lead: {
+          nombre_cliente: nombre,
+          telefono_cliente: phoneFix,
+          email_cliente: email,
+        },
+      });
+      return {
+        handled: true,
+        respuesta: `Actualicé los datos:
+
+- Servicio: **${flow.selected_service_nombre}**
+- Horario: **${flow.selected_slot_label}**
+- Nombre: **${nombre}**
+- Teléfono: **${phoneFix}**${email ? `\n- Email: **${email}**` : ""}
+
+¿Está todo bien así? Respondé **sí** o **no**.`,
+      };
+    }
+
+    if (!wantsYes(mensaje)) {
+      return {
+        handled: true,
+        respuesta:
+          "¿Confirmamos el turno? Respondé **sí** para crear el turno, o **no** / mandá los datos corregidos.",
+      };
+    }
+
+    const nombre = lead.nombre_cliente || "Cliente";
+    const phone = lead.telefono_cliente;
+    const email = lead.email_cliente || null;
+
+    if (!phone || !flow.selected_slot) {
+      await patchConversationFlow(conversationId, businessId, {
+        booking_step: "ask_contact",
+      });
+      return {
+        handled: true,
+        respuesta: "Me faltan datos. Mandame nombre y teléfono otra vez.",
+      };
+    }
+
     try {
       const services = await listActiveServices(businessId);
       const svc = flow.selected_service_id
@@ -457,11 +566,22 @@ export async function handleBookingOrchestrator(params: {
       };
     } catch (err) {
       console.error("[orchestrator crearTurno]", err);
+      const msg = err instanceof Error ? err.message : "error";
+      if (/ocupó|ocupado/i.test(msg)) {
+        await patchConversationFlow(conversationId, businessId, {
+          booking_step: "pick_day",
+          selected_slot: null,
+          selected_slot_label: null,
+        });
+        return {
+          handled: true,
+          respuesta:
+            "Uy, ese horario se acaba de ocupar. Elegí otro día/horario: pedime *turno* o decime el día de nuevo.",
+        };
+      }
       return {
         handled: true,
-        respuesta: `Tuve un problema al crear el evento en Google Calendar: ${
-          err instanceof Error ? err.message : "error"
-        }.\n\n¿Probamos de nuevo? Decí "turno" para reiniciar.`,
+        respuesta: `Tuve un problema al crear el evento en Google Calendar: ${msg}.\n\n¿Probamos de nuevo? Decí "turno" para reiniciar.`,
       };
     }
   }

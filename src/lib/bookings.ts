@@ -503,6 +503,9 @@ export async function crearTurno(params: {
 
   const supabase = getSupabase();
   const start = new Date(params.fechaHoraIso);
+  if (Number.isNaN(start.getTime())) {
+    throw new Error("Horario inválido");
+  }
   const end = new Date(start.getTime() + params.duracionMinutos * 60 * 1000);
   const expiresAt = new Date(
     Date.now() + config.minutos_expiracion_pendiente * 60 * 1000
@@ -510,6 +513,21 @@ export async function crearTurno(params: {
 
   const calendar = calendarClientFromRefreshToken(config.google_refresh_token);
   const calendarId = config.google_calendar_id || "primary";
+
+  // Re-validación puntual: freebusy + bookings DB justo antes de crear
+  const windowFrom = new Date(start.getTime() - 60 * 1000);
+  const windowTo = new Date(end.getTime() + 60 * 1000);
+  const [gBusy, dbBusy] = await Promise.all([
+    fetchBusyPeriods(calendar, calendarId, windowFrom, windowTo),
+    fetchDbBusyPeriods(params.businessId, windowFrom, windowTo),
+  ]);
+  const busy = [...gBusy, ...dbBusy];
+  const stillFree = !busy.some((b) => overlaps(start, end, b.start, b.end));
+  if (!stillFree) {
+    throw new Error(
+      "Ese horario se ocupó recién. Pedile al usuario que elija otro."
+    );
+  }
 
   const summary = `PENDIENTE — ${params.servicio} — ${params.nombreCliente}`;
   const description = [
@@ -623,6 +641,14 @@ export async function confirmarTurno(bookingId: string, businessId: string) {
     .eq("id", bookingId);
 
   if (updErr) throw new Error(updErr.message);
+
+  try {
+    const { sendBookingConfirmedEmails } = await import("@/lib/email");
+    await sendBookingConfirmedEmails(bookingId);
+  } catch (err) {
+    console.error("[confirmarTurno email]", err);
+  }
+
   return { ok: true, estado: "confirmado" };
 }
 

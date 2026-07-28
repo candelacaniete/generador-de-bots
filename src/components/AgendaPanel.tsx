@@ -24,11 +24,14 @@ type Booking = {
 type AgendaPanelProps = {
   businessId: string;
   calendarStatus?: string | null;
+  /** Si true, no muestra la lista de turnos (van al panel dedicado). */
+  hideBookings?: boolean;
 };
 
 export default function AgendaPanel({
   businessId,
   calendarStatus,
+  hideBookings = false,
 }: AgendaPanelProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -42,6 +45,9 @@ export default function AgendaPanel({
   const [conectado, setConectado] = useState(false);
   const [googleEmail, setGoogleEmail] = useState<string | null>(null);
   const [duracionDefault, setDuracionDefault] = useState(30);
+  const [colorPrimario, setColorPrimario] = useState("#2563eb");
+  const [emailNotificaciones, setEmailNotificaciones] = useState("");
+  const [ownerEmail, setOwnerEmail] = useState("");
   const [services, setServices] = useState<Service[]>([
     { nombre: "Consulta", duracion_minutos: 30 },
   ]);
@@ -51,19 +57,23 @@ export default function AgendaPanel({
     setLoading(true);
     setError(null);
     try {
-      const [cfgRes, bookRes] = await Promise.all([
+      const requests: Promise<Response>[] = [
         fetch(`/api/agenda/config?business_id=${businessId}`),
-        fetch(`/api/bookings?business_id=${businessId}`),
-      ]);
+      ];
+      if (!hideBookings) {
+        requests.push(fetch(`/api/bookings?business_id=${businessId}`));
+      }
+      const [cfgRes, bookRes] = await Promise.all(requests);
       const cfg = await cfgRes.json();
-      const books = await bookRes.json();
       if (!cfgRes.ok) throw new Error(cfg.error || "Error al cargar config");
-      if (!bookRes.ok) throw new Error(books.error || "Error al cargar turnos");
 
       setAgendaHabilitada(Boolean(cfg.business.agenda_habilitada));
       setRequiereSeña(Boolean(cfg.business.requiere_sena));
       setAliasCbu(cfg.business.alias_cbu || "");
       setInstruccionesSeña(cfg.business.instrucciones_sena || "");
+      setColorPrimario(cfg.business.color_primario || "#2563eb");
+      setEmailNotificaciones(cfg.business.email_notificaciones || "");
+      setOwnerEmail(cfg.business.owner_email || "");
       setConectado(Boolean(cfg.config.conectado));
       setGoogleEmail(cfg.config.google_account_email);
       setDuracionDefault(cfg.config.duracion_default_minutos || 30);
@@ -72,7 +82,12 @@ export default function AgendaPanel({
           ? cfg.services
           : [{ nombre: "Consulta", duracion_minutos: 30 }]) as Service[]
       );
-      setBookings(books.bookings || []);
+
+      if (!hideBookings && bookRes) {
+        const books = await bookRes.json();
+        if (!bookRes.ok) throw new Error(books.error || "Error al cargar turnos");
+        setBookings(books.bookings || []);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error");
     } finally {
@@ -100,6 +115,9 @@ export default function AgendaPanel({
           requiere_sena: requiereSeña,
           alias_cbu: aliasCbu,
           instrucciones_sena: instruccionesSeña,
+          color_primario: colorPrimario,
+          email_notificaciones: emailNotificaciones,
+          owner_email: ownerEmail,
           config: {
             duracion_default_minutos: duracionDefault,
           },
@@ -163,7 +181,9 @@ export default function AgendaPanel({
         onSubmit={onSave}
         className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
       >
-        <h2 className="text-sm font-semibold text-slate-900">Agenda / turnos</h2>
+        <h2 className="text-sm font-semibold text-slate-900">
+          Configuración de agenda
+        </h2>
         <p className="mt-1 text-sm text-slate-600">
           Conectá Google Calendar, definí servicios y seña manual.
         </p>
@@ -212,6 +232,56 @@ export default function AgendaPanel({
             onChange={(e) => setDuracionDefault(Number(e.target.value) || 30)}
             className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
           />
+        </label>
+
+        <label className="mt-4 flex flex-col gap-1.5">
+          <span className="text-sm font-medium text-slate-700">
+            Color del bot (hex)
+          </span>
+          <div className="flex items-center gap-3">
+            <input
+              type="color"
+              value={colorPrimario}
+              onChange={(e) => setColorPrimario(e.target.value)}
+              className="h-10 w-14 cursor-pointer rounded border border-slate-300 bg-white p-1"
+            />
+            <input
+              value={colorPrimario}
+              onChange={(e) => setColorPrimario(e.target.value)}
+              placeholder="#2563eb"
+              pattern="^#[0-9A-Fa-f]{6}$"
+              className="flex-1 rounded-xl border border-slate-300 px-3 py-2 text-sm font-mono"
+            />
+          </div>
+        </label>
+
+        <label className="mt-4 flex flex-col gap-1.5">
+          <span className="text-sm font-medium text-slate-700">
+            Email para avisos de turnos confirmados
+          </span>
+          <input
+            type="email"
+            value={emailNotificaciones}
+            onChange={(e) => setEmailNotificaciones(e.target.value)}
+            placeholder="turnos@negocio.com"
+            className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+          />
+        </label>
+
+        <label className="mt-4 flex flex-col gap-1.5">
+          <span className="text-sm font-medium text-slate-700">
+            Email de acceso al panel (owner)
+          </span>
+          <input
+            type="email"
+            value={ownerEmail}
+            onChange={(e) => setOwnerEmail(e.target.value)}
+            placeholder="dueño@negocio.com"
+            className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+          />
+          <span className="text-xs text-slate-500">
+            Ese email puede entrar con magic link a este panel.
+          </span>
         </label>
 
         <label className="mt-4 flex flex-col gap-1.5">
@@ -332,51 +402,53 @@ export default function AgendaPanel({
         </button>
       </form>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="text-sm font-semibold text-slate-900">Turnos recientes</h2>
-        <div className="mt-3 space-y-3">
-          {bookings.length === 0 ? (
-            <p className="text-sm text-slate-500">Todavía no hay turnos.</p>
-          ) : (
-            bookings.map((b) => (
-              <div
-                key={b.id}
-                className="rounded-xl border border-slate-200 px-3 py-3 text-sm"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="font-medium text-slate-900">
-                      {b.servicio} · {b.estado}
-                    </p>
-                    <p className="text-slate-600">
-                      {new Date(b.fecha_hora).toLocaleString("es-AR")} —{" "}
-                      {b.nombre_cliente} · {b.telefono_cliente}
-                    </p>
-                  </div>
-                  {b.estado === "pendiente" ? (
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => bookingAction(b.id, "confirmar")}
-                        className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white"
-                      >
-                        Confirmar
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => bookingAction(b.id, "cancelar")}
-                        className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-800"
-                      >
-                        Cancelar
-                      </button>
+      {!hideBookings ? (
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 className="text-sm font-semibold text-slate-900">Turnos recientes</h2>
+          <div className="mt-3 space-y-3">
+            {bookings.length === 0 ? (
+              <p className="text-sm text-slate-500">Todavía no hay turnos.</p>
+            ) : (
+              bookings.map((b) => (
+                <div
+                  key={b.id}
+                  className="rounded-xl border border-slate-200 px-3 py-3 text-sm"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="font-medium text-slate-900">
+                        {b.servicio} · {b.estado}
+                      </p>
+                      <p className="text-slate-600">
+                        {new Date(b.fecha_hora).toLocaleString("es-AR")} —{" "}
+                        {b.nombre_cliente} · {b.telefono_cliente}
+                      </p>
                     </div>
-                  ) : null}
+                    {b.estado === "pendiente" ? (
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => bookingAction(b.id, "confirmar")}
+                          className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white"
+                        >
+                          Confirmar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => bookingAction(b.id, "cancelar")}
+                          className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-800"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
-            ))
-          )}
+              ))
+            )}
+          </div>
         </div>
-      </div>
+      ) : null}
     </section>
   );
 }

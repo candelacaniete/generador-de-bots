@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
 
   if (oauthError || !code || !businessId) {
     return NextResponse.redirect(
-      `${appUrl}/bot/${businessId || ""}?calendar=error`
+      `${appUrl}/panel/${businessId || ""}?tab=config&calendar=error`
     );
   }
 
@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
     const tokens = await exchangeCodeForTokens(code);
     if (!tokens.refresh_token) {
       return NextResponse.redirect(
-        `${appUrl}/bot/${businessId}?calendar=missing_refresh`
+        `${appUrl}/panel/${businessId}?tab=config&calendar=missing_refresh`
       );
     }
 
@@ -56,12 +56,12 @@ export async function GET(req: NextRequest) {
       .eq("id", businessId);
 
     return NextResponse.redirect(
-      `${appUrl}/bot/${businessId}?calendar=connected`
+      `${appUrl}/panel/${businessId}?tab=config&calendar=connected`
     );
   } catch (err) {
     console.error("[oauth/callback]", err);
     return NextResponse.redirect(
-      `${appUrl}/bot/${businessId}?calendar=error`
+      `${appUrl}/panel/${businessId}?tab=config&calendar=error`
     );
   }
 }

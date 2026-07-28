@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { Geist, Geist_Mono } from "next/font/google";
+import SiteHeader from "@/components/SiteHeader";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -30,19 +30,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-slate-50 text-slate-900">
-        <header className="border-b border-slate-200 bg-white">
-          <div className="mx-auto flex h-14 w-full max-w-5xl items-center justify-between px-4">
-            <Link href="/" className="text-sm font-semibold text-slate-900">
-              BotGen
-            </Link>
-            <Link
-              href="/nuevo"
-              className="text-sm font-medium text-blue-600 hover:text-blue-700"
-            >
-              Nuevo bot
-            </Link>
-          </div>
-        </header>
+        <SiteHeader />
         {children}
       </body>
     </html>

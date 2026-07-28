@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireBusinessApiAccess } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 import { DEFAULT_HORARIO, type HorarioLaboral } from "@/lib/schedule";
 
@@ -10,13 +11,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "business_id obligatorio" }, { status: 400 });
   }
 
+  const access = await requireBusinessApiAccess(req, businessId);
+  if (!access.ok) return access.response;
+
   const supabase = getSupabase();
   const [{ data: business }, { data: config }, { data: services }] =
     await Promise.all([
       supabase
         .from("businesses")
         .select(
-          "id, nombre, agenda_habilitada, requiere_sena, alias_cbu, instrucciones_sena"
+          "id, nombre, agenda_habilitada, requiere_sena, alias_cbu, instrucciones_sena, color_primario, owner_email, email_notificaciones"
         )
         .eq("id", businessId)
         .maybeSingle(),
@@ -72,6 +76,9 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: "business_id obligatorio" }, { status: 400 });
     }
 
+    const access = await requireBusinessApiAccess(req, businessId);
+    if (!access.ok) return access.response;
+
     const supabase = getSupabase();
 
     const businessPatch: Record<string, unknown> = {};
@@ -84,6 +91,21 @@ export async function PUT(req: NextRequest) {
     if ("alias_cbu" in body) businessPatch.alias_cbu = body.alias_cbu;
     if ("instrucciones_sena" in body) {
       businessPatch.instrucciones_sena = body.instrucciones_sena;
+    }
+    if ("color_primario" in body) {
+      const color = String(body.color_primario ?? "").trim();
+      if (/^#[0-9A-Fa-f]{6}$/.test(color)) {
+        businessPatch.color_primario = color;
+      }
+    }
+    if ("email_notificaciones" in body) {
+      businessPatch.email_notificaciones = String(
+        body.email_notificaciones ?? ""
+      ).trim() || null;
+    }
+    if ("owner_email" in body) {
+      businessPatch.owner_email =
+        String(body.owner_email ?? "").trim().toLowerCase() || null;
     }
 
     if (Object.keys(businessPatch).length) {

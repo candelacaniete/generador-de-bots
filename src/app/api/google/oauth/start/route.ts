@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireBusinessApiAccess } from "@/lib/auth";
 import { getGoogleAuthUrl } from "@/lib/google-oauth";
 
 export const runtime = "nodejs";
@@ -12,6 +13,9 @@ export async function GET(req: NextRequest) {
         { status: 400 }
       );
     }
+
+    const access = await requireBusinessApiAccess(req, businessId);
+    if (!access.ok) return access.response;
 
     const url = getGoogleAuthUrl(businessId);
     return NextResponse.redirect(url);
