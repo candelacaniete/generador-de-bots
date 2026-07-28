@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
-import AgendaPanel from "@/components/AgendaPanel";
 import ChatWidget from "@/components/ChatWidget";
 import CopySnippet from "@/components/CopySnippet";
 import { env } from "@/lib/env";
@@ -10,7 +9,6 @@ import { getSupabase } from "@/lib/supabase";
 
 type PageProps = {
   params: Promise<{ business_id: string }>;
-  searchParams: Promise<{ calendar?: string }>;
 };
 
 async function resolveAppUrl(): Promise<string> {
@@ -24,9 +22,8 @@ async function resolveAppUrl(): Promise<string> {
   return "";
 }
 
-export default async function BotPage({ params, searchParams }: PageProps) {
+export default async function BotPage({ params }: PageProps) {
   const { business_id } = await params;
-  const { calendar } = await searchParams;
 
   let business: { id: string; nombre: string; slug: string } | null = null;
 
@@ -55,6 +52,7 @@ export default async function BotPage({ params, searchParams }: PageProps) {
     ? `${appUrl}/api/widget/${business.id}`
     : `/api/widget/${business.id}`;
   const embedSnippet = `<script src="${widgetUrl}" defer></script>`;
+  const panelUrl = `/panel/${business.id}`;
 
   return (
     <main className="mx-auto flex min-h-full w-full max-w-2xl flex-1 flex-col px-4 py-10">
@@ -69,9 +67,26 @@ export default async function BotPage({ params, searchParams }: PageProps) {
           {business.nombre}
         </h1>
         <p className="mt-2 text-sm text-slate-600">
-          Probá el chat, configurá la agenda y pegá el snippet en WordPress.
+          Probá el chat y pegá el snippet en WordPress. Los turnos se gestionan
+          en el panel interno.
         </p>
       </div>
+
+      <section className="mb-6 rounded-2xl border border-blue-200 bg-blue-50 p-5">
+        <h2 className="text-sm font-semibold text-slate-900">
+          Panel de turnos (uso interno)
+        </h2>
+        <p className="mt-1 text-sm text-slate-600">
+          Confirmá o cancelá reservas, configurá Google Calendar y servicios.
+          También se puede instalar como app en el celular.
+        </p>
+        <Link
+          href={panelUrl}
+          className="mt-4 inline-flex items-center justify-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+        >
+          Abrir panel de turnos
+        </Link>
+      </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <h2 className="text-sm font-semibold text-slate-900">
@@ -109,8 +124,6 @@ export default async function BotPage({ params, searchParams }: PageProps) {
           </code>
         </div>
       </section>
-
-      <AgendaPanel businessId={business.id} calendarStatus={calendar ?? null} />
 
       <ChatWidget businessId={business.id} businessName={business.nombre} />
     </main>

@@ -25,13 +25,17 @@ App web para crear chatbots con IA a partir de un PDF/Word del negocio. Multi-te
 
 ## Agenda (fase 1)
 
-En `/bot/[business_id]`:
+- `/bot/[business_id]` — snippet WordPress + preview del chat
+- `/panel/[business_id]` — panel interno de turnos (PWA instalable en el celular)
 
-1. **Conectar Google Calendar** (OAuth)
+En el panel:
+
+1. **Conectar Google Calendar** (OAuth) en la pestaña Configuración
 2. Activar agenda, definir servicios, alias/CBU si hay seña
 3. El bot ofrece horarios reales, crea eventos `PENDIENTE` en Calendar
-4. Confirmá/cancelá turnos desde la tabla de la misma página
-5. Cron diario (Hobby) expira pendientes (`/api/cron/expire-bookings`).  
+4. Confirmá/cancelá turnos desde la pestaña Turnos
+5. En Chrome/Android: “Instalar app”; en iPhone: Safari → Compartir → Agregar a pantalla de inicio
+6. Cron diario (Hobby) expira pendientes (`/api/cron/expire-bookings`).  
    En plan Hobby Vercel solo permite 1 cron/día. Si necesitás cada 10 min, usá un cron externo (cron-job.org) pegándole a esa URL con header `Authorization: Bearer CRON_SECRET`.
 
 Reglas del bot:
