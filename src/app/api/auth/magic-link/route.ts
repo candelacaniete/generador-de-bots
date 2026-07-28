@@ -49,11 +49,15 @@ export async function POST(req: NextRequest) {
     });
 
     if (error) {
+      const isRateLimit = /rate limit/i.test(error.message);
       return NextResponse.json(
         {
-          error: error.message,
-          hint:
-            "En Supabase → Authentication → URL Configuration: Site URL = https://generador-de-bots.vercel.app y Redirect URLs debe incluir https://generador-de-bots.vercel.app/auth/callback",
+          error: isRateLimit
+            ? "Supabase frenó el envío de emails (rate limit). Esperá ~1 hora o configurá SMTP propio (Resend) en Authentication → SMTP."
+            : error.message,
+          hint: isRateLimit
+            ? "Supabase free con mailer default: pocos mails/hora. En Dashboard → Authentication → Emails → SMTP Settings, usá Resend (smtp.resend.com)."
+            : "En Supabase → Authentication → URL Configuration: Site URL y Redirect URLs deben ser https://generador-de-bots.vercel.app (no localhost).",
         },
         { status: 400 }
       );
