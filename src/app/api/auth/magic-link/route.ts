@@ -1,30 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { normalizeSupabaseUrl } from "@/lib/supabase";
-import { env } from "@/lib/env";
+import { getSupabase } from "@/lib/supabase";
 import { resolvePublicAppUrl } from "@/lib/app-url";
+import { sendMagicLinkEmail } from "@/lib/email";
+import { isAdminEmail } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
 /**
- * Magic link vía server: así leemos next_public_supabase_anon_key
- * (minúsculas) sin depender del inline de NEXT_PUBLIC_* en el browser.
+ * Magic link 100% server-side:
+ * - generateLink con service_role (nunca manda secret al browser)
+ * - email vía Resend con link a /auth/callback?token_hash=...
  */
 export async function POST(req: NextRequest) {
   try {
-    const rawUrl = env("NEXT_PUBLIC_SUPABASE_URL");
-    const anon = env("NEXT_PUBLIC_SUPABASE_ANON_KEY");
-
-    if (!rawUrl || !anon) {
-      return NextResponse.json(
-        {
-          error:
-            "Faltan next_public_supabase_url o next_public_supabase_anon_key en el entorno",
-        },
-        { status: 500 }
-      );
-    }
-
     const body = await req.json();
     const email = String(body.email ?? "").trim().toLowerCase();
     const nextPath = String(body.next ?? "/").trim() || "/";
@@ -36,35 +24,84 @@ export async function POST(req: NextRequest) {
     const appUrl = resolvePublicAppUrl(req);
     const redirectTo = `${appUrl}/auth/callback?next=${encodeURIComponent(nextPath)}`;
 
-    const supabase = createClient(normalizeSupabaseUrl(rawUrl), anon, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
+    const supabase = getSupabase();
 
-    const { error } = await supabase.auth.signInWithOtp({
+    // magiclink (usuario existente) o invite (alta)
+    let generated = await supabase.auth.admin.generateLink({
+      type: "magiclink",
       email,
-      options: {
-        emailRedirectTo: redirectTo,
-        shouldCreateUser: true,
-      },
+      options: { redirectTo },
     });
 
-    if (error) {
-      const isRateLimit = /rate limit/i.test(error.message);
+    if (generated.error) {
+      const msg = generated.error.message || "";
+      if (/not found|no.*user|user.*not/i.test(msg)) {
+        generated = await supabase.auth.admin.generateLink({
+          type: "invite",
+          email,
+          options: { redirectTo },
+        });
+      }
+    }
+
+    if (generated.error || !generated.data) {
       return NextResponse.json(
         {
-          error: isRateLimit
-            ? "Supabase frenó el envío de emails (rate limit). Esperá ~1 hora o configurá SMTP propio (Resend) en Authentication → SMTP."
-            : error.message,
-          hint: isRateLimit
-            ? "Supabase free con mailer default: pocos mails/hora. En Dashboard → Authentication → Emails → SMTP Settings, usá Resend (smtp.resend.com)."
-            : "En Supabase → Authentication → URL Configuration: Site URL y Redirect URLs deben ser https://generador-de-bots.vercel.app (no localhost).",
+          error:
+            generated.error?.message ||
+            "No se pudo generar el link de acceso",
         },
         { status: 400 }
       );
     }
 
-    return NextResponse.json({ ok: true, redirect_to: redirectTo });
+    const props = generated.data.properties as {
+      hashed_token?: string;
+      verification_type?: string;
+      action_link?: string;
+    };
+
+    const tokenHash = props.hashed_token;
+    const verifyType = props.verification_type || "email";
+
+    if (!tokenHash) {
+      // Fallback al action_link de Supabase (pasa por su verify)
+      const action = props.action_link;
+      if (!action) {
+        return NextResponse.json(
+          { error: "Supabase no devolvió token ni action_link" },
+          { status: 500 }
+        );
+      }
+      const sent = await sendMagicLinkEmail({ to: email, loginUrl: action });
+      if (!sent.ok) {
+        return NextResponse.json({ error: sent.error }, { status: 500 });
+      }
+      return NextResponse.json({
+        ok: true,
+        via: "action_link",
+        is_admin: isAdminEmail(email),
+      });
+    }
+
+    const loginUrl =
+      `${appUrl}/auth/callback` +
+      `?token_hash=${encodeURIComponent(tokenHash)}` +
+      `&type=${encodeURIComponent(verifyType)}` +
+      `&next=${encodeURIComponent(nextPath)}`;
+
+    const sent = await sendMagicLinkEmail({ to: email, loginUrl });
+    if (!sent.ok) {
+      return NextResponse.json({ error: sent.error }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      ok: true,
+      via: "token_hash",
+      is_admin: isAdminEmail(email),
+    });
   } catch (err) {
+    console.error("[magic-link]", err);
     return NextResponse.json(
       {
         error:

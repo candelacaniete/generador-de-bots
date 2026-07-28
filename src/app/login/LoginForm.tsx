@@ -2,7 +2,6 @@
 
 import { FormEvent, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { createBrowserClient } from "@supabase/ssr";
 
 export default function LoginPage() {
   const searchParams = useSearchParams();
@@ -18,7 +17,7 @@ export default function LoginPage() {
       return "Falta next_public_supabase_anon_key (o la URL) en Vercel.";
     }
     if (errorParam === "admin_only") {
-      return "Esta sección es solo para el equipo interno.";
+      return "Esta sección es solo para el equipo interno. Tu email tiene que estar en admin_emails.";
     }
     if (errorParam === "auth_callback") {
       return reason
@@ -33,33 +32,14 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
     try {
-      // Config desde el server (lee env en minúsculas) + PKCE en el browser
-      const cfgRes = await fetch("/api/auth/public-config");
-      const cfg = await cfgRes.json();
-      if (!cfgRes.ok) throw new Error(cfg.error || "Auth no configurado");
-
-      const supabase = createBrowserClient(cfg.url, cfg.anonKey);
-      const origin = window.location.origin;
-      const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(next)}`;
-
-      // Por si el link se abre en otro device / template con token_hash
-      document.cookie = `auth_next=${encodeURIComponent(next)}; Path=/; Max-Age=3600; SameSite=Lax`;
-
-      const { error: otpError } = await supabase.auth.signInWithOtp({
-        email: email.trim(),
-        options: {
-          emailRedirectTo: redirectTo,
-          shouldCreateUser: true,
-        },
+      // 100% server-side: nunca manda API keys al browser
+      const res = await fetch("/api/auth/magic-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), next }),
       });
-      if (otpError) {
-        if (/rate limit/i.test(otpError.message)) {
-          throw new Error(
-            "Supabase frenó el envío de emails (rate limit). Esperá un rato o configurá SMTP con Resend."
-          );
-        }
-        throw otpError;
-      }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "No se pudo enviar el link");
       setSent(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo enviar el link");
@@ -80,7 +60,7 @@ export default function LoginPage() {
       {sent ? (
         <p className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
           Revisá <strong>{email}</strong> y abrí el link para entrar. Si no
-          llega, mirá spam. Abrilo en el mismo navegador donde lo pediste.
+          llega, mirá spam (el mail sale por Resend).
         </p>
       ) : (
         <form onSubmit={onSubmit} className="mt-6 space-y-4">

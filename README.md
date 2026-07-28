@@ -23,15 +23,12 @@ App web para crear chatbots con IA a partir de un PDF/Word del negocio. Multi-te
    - **Site URL:** `https://generador-de-bots.vercel.app` (NO localhost)
    - **Redirect URLs:** `https://generador-de-bots.vercel.app/auth/callback`  
      (y `https://generador-de-bots.vercel.app/**` si ofrece wildcard)
-4. (Recomendado) Authentication → Email Templates → Magic Link, cuerpo:
-   ```html
-   <p><a href="{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=email">Ingresar al panel</a></p>
-   ```
-   Así el login funciona aunque abras el mail en otro dispositivo (sin depender de PKCE).
+4. (Opcional) Authentication → Email Templates → Magic Link ya no es crítico:
+   el login manda el mail por **Resend** con `token_hash` directo a `/auth/callback`.
 5. Copiá `.env.example` → `.env.local` (o variables en Vercel).  
-   Importantes: `next_public_supabase_anon_key`, `admin_emails`, `resend_api_key`
-   (también acepta MAYÚSCULAS).  
-   `next_public_app_url` debe ser `https://generador-de-bots.vercel.app` (si queda en localhost, el magic link rompe).
+   Importantes: `supabase_service_role_key`, `admin_emails` (tu gmail de admin),
+   `resend_api_key` (obligatorio para el magic link), `next_public_app_url`.
+   **No** pegues la service_role en `next_public_supabase_anon_key`.
 6. En [Google Cloud Console](https://console.cloud.google.com/):
    - OAuth Client ID (Web)
    - Redirect: `https://TU-DOMINIO/api/google/oauth/callback`
