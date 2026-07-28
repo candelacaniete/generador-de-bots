@@ -21,15 +21,21 @@ App web para crear chatbots con IA a partir de un PDF/Word del negocio. Multi-te
 2. En Supabase → Authentication → Providers: Email habilitado (magic link / OTP).
 3. Supabase → Authentication → URL Configuration:
    - **Site URL:** `https://generador-de-bots.vercel.app` (NO localhost)
-   - **Redirect URLs:** `https://generador-de-bots.vercel.app/auth/callback`
-4. Copiá `.env.example` → `.env.local` (o variables en Vercel).  
+   - **Redirect URLs:** `https://generador-de-bots.vercel.app/auth/callback`  
+     (y `https://generador-de-bots.vercel.app/**` si ofrece wildcard)
+4. (Recomendado) Authentication → Email Templates → Magic Link, cuerpo:
+   ```html
+   <p><a href="{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=email">Ingresar al panel</a></p>
+   ```
+   Así el login funciona aunque abras el mail en otro dispositivo (sin depender de PKCE).
+5. Copiá `.env.example` → `.env.local` (o variables en Vercel).  
    Importantes: `next_public_supabase_anon_key`, `admin_emails`, `resend_api_key`
    (también acepta MAYÚSCULAS).  
    `next_public_app_url` debe ser `https://generador-de-bots.vercel.app` (si queda en localhost, el magic link rompe).
-5. En [Google Cloud Console](https://console.cloud.google.com/):
+6. En [Google Cloud Console](https://console.cloud.google.com/):
    - OAuth Client ID (Web)
    - Redirect: `https://TU-DOMINIO/api/google/oauth/callback`
-6. `npm install && npm run dev`
+7. `npm install && npm run dev`
 
 ## Roles y rutas
 
