@@ -28,7 +28,9 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/panel/") ||
     pathname.startsWith("/bot/") ||
     pathname.startsWith("/nuevo") ||
-    pathname.startsWith("/admin");
+    pathname.startsWith("/admin") ||
+    pathname === "/cuenta" ||
+    pathname.startsWith("/cuenta/");
 
   if (!needsAuth) {
     return NextResponse.next();
@@ -91,7 +93,11 @@ export async function middleware(request: NextRequest) {
       pathname.startsWith("/admin")) &&
     !isAdmin
   ) {
-    return NextResponse.redirect(new URL("/login?error=admin_only", request.url));
+    const login = new URL("/login", request.url);
+    login.searchParams.set("error", "admin_only");
+    login.searchParams.set("email", email);
+    login.searchParams.set("next", pathname);
+    return NextResponse.redirect(login);
   }
 
   return response;
@@ -105,5 +111,6 @@ export const config = {
     "/nuevo/:path*",
     "/admin",
     "/admin/:path*",
+    "/cuenta",
   ],
 };

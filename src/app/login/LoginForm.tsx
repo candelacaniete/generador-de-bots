@@ -2,23 +2,28 @@
 
 import { FormEvent, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { createBrowserClient } from "@supabase/ssr";
 
 export default function LoginPage() {
   const searchParams = useSearchParams();
-  const next = searchParams.get("next") || "/";
+  const next = searchParams.get("next") || "/cuenta";
   const errorParam = searchParams.get("error");
   const reason = searchParams.get("reason");
+  const blockedEmail = searchParams.get("email");
 
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(blockedEmail || "");
   const [sent, setSent] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(() => {
     if (errorParam === "auth_not_configured") {
-      return "Falta next_public_supabase_anon_key (o la URL) en Vercel.";
+      return "Falta configurar Supabase en Vercel.";
     }
     if (errorParam === "admin_only") {
-      return "Esta sección es solo para el equipo interno.";
+      return (
+        `Tu sesión${blockedEmail ? ` (${blockedEmail})` : ""} no está en admin_emails. ` +
+        `En Vercel → Environment Variables poné: admin_emails=candela.caniete1@gmail.com,mailpruebascandela@gmail.com ` +
+        `(el mail exacto con el que pedís el link) y redeploy.`
+      );
     }
     if (errorParam === "auth_callback") {
       return reason
@@ -32,34 +37,16 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setNotice(null);
     try {
-      // Config desde el server (lee env en minúsculas) + PKCE en el browser
-      const cfgRes = await fetch("/api/auth/public-config");
-      const cfg = await cfgRes.json();
-      if (!cfgRes.ok) throw new Error(cfg.error || "Auth no configurado");
-
-      const supabase = createBrowserClient(cfg.url, cfg.anonKey);
-      const origin = window.location.origin;
-      const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(next)}`;
-
-      // Por si el link se abre en otro device / template con token_hash
-      document.cookie = `auth_next=${encodeURIComponent(next)}; Path=/; Max-Age=3600; SameSite=Lax`;
-
-      const { error: otpError } = await supabase.auth.signInWithOtp({
-        email: email.trim(),
-        options: {
-          emailRedirectTo: redirectTo,
-          shouldCreateUser: true,
-        },
+      const res = await fetch("/api/auth/magic-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), next }),
       });
-      if (otpError) {
-        if (/rate limit/i.test(otpError.message)) {
-          throw new Error(
-            "Supabase frenó el envío de emails (rate limit). Esperá un rato o configurá SMTP con Resend."
-          );
-        }
-        throw otpError;
-      }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "No se pudo enviar el link");
+      if (data.notice) setNotice(data.notice);
       setSent(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo enviar el link");
@@ -78,10 +65,17 @@ export default function LoginPage() {
       </p>
 
       {sent ? (
-        <p className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
-          Revisá <strong>{email}</strong> y abrí el link para entrar. Si no
-          llega, mirá spam. Abrilo en el mismo navegador donde lo pediste.
-        </p>
+        <div className="mt-6 space-y-3">
+          <p className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
+            Revisá <strong>{email}</strong> y abrí el link. Si no llega, mirá
+            spam.
+          </p>
+          {notice ? (
+            <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              {notice}
+            </p>
+          ) : null}
+        </div>
       ) : (
         <form onSubmit={onSubmit} className="mt-6 space-y-4">
           <label className="flex flex-col gap-1.5">
@@ -91,7 +85,7 @@ export default function LoginPage() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="tu@negocio.com"
+              placeholder="tu@email.com"
               className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm"
             />
           </label>

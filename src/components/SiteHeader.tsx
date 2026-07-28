@@ -18,13 +18,7 @@ export default function SiteHeader() {
         </Link>
         <div className="flex items-center gap-4">
           <Link
-            href="/admin"
-            className="text-sm font-medium text-slate-600 hover:text-slate-900"
-          >
-            Admin
-          </Link>
-          <Link
-            href="/login"
+            href="/login?next=/cuenta"
             className="text-sm font-medium text-blue-600 hover:text-blue-700"
           >
             Ingresar

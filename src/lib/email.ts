@@ -12,6 +12,50 @@ function fromAddress(): string {
   return env("RESEND_FROM") || "Turnos <onboarding@resend.dev>";
 }
 
+export async function sendMagicLinkEmail(params: {
+  to: string;
+  loginUrl: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const resend = getResend();
+  if (!resend) {
+    return {
+      ok: false,
+      error:
+        "Falta resend_api_key. Sin eso no podemos mandar el magic link desde el server.",
+    };
+  }
+
+  try {
+    const { error } = await resend.emails.send({
+      from: fromAddress(),
+      to: params.to,
+      subject: "Tu link para ingresar al panel",
+      text: `Hola,
+
+Para ingresar al panel, abrí este link (válido por un rato):
+
+${params.loginUrl}
+
+Si no pediste acceso, ignorá este mail.
+`,
+      html: `<p>Hola,</p>
+<p>Para ingresar al panel, abrí este link:</p>
+<p><a href="${params.loginUrl}">Ingresar al panel</a></p>
+<p style="color:#64748b;font-size:12px">Si no pediste acceso, ignorá este mail.</p>`,
+    });
+
+    if (error) {
+      return { ok: false, error: error.message };
+    }
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Error enviando email",
+    };
+  }
+}
+
 export async function sendBookingConfirmedEmails(bookingId: string) {
   const resend = getResend();
   if (!resend) {
