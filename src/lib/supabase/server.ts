@@ -7,7 +7,9 @@ export async function createServerSupabase() {
   const rawUrl = env("NEXT_PUBLIC_SUPABASE_URL");
   const anon = env("NEXT_PUBLIC_SUPABASE_ANON_KEY");
   if (!rawUrl || !anon) {
-    throw new Error("Faltan NEXT_PUBLIC_SUPABASE_URL o NEXT_PUBLIC_SUPABASE_ANON_KEY");
+    throw new Error(
+      "Faltan next_public_supabase_url o next_public_supabase_anon_key en el entorno"
+    );
   }
 
   const cookieStore = await cookies();
