@@ -1,11 +1,10 @@
 import { google } from "googleapis";
 import { env } from "@/lib/env";
-import { normalizeAppUrl } from "@/lib/app-url";
+import { resolvePublicAppUrl } from "@/lib/app-url";
 
 export function getGoogleOAuthClient(redirectUri?: string) {
   const clientId = env("GOOGLE_CLIENT_ID");
   const clientSecret = env("GOOGLE_CLIENT_SECRET");
-  const appUrl = normalizeAppUrl(env("NEXT_PUBLIC_APP_URL"));
 
   if (!clientId || !clientSecret) {
     throw new Error(
@@ -14,8 +13,7 @@ export function getGoogleOAuthClient(redirectUri?: string) {
   }
 
   const redirect =
-    redirectUri ??
-    `${appUrl ?? "http://localhost:3000"}/api/google/oauth/callback`;
+    redirectUri ?? `${resolvePublicAppUrl()}/api/google/oauth/callback`;
 
   return new google.auth.OAuth2(clientId, clientSecret, redirect);
 }
