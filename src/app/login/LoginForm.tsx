@@ -2,7 +2,6 @@
 
 import { FormEvent, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { createBrowserSupabase } from "@/lib/supabase/client";
 
 export default function LoginPage() {
   const searchParams = useSearchParams();
@@ -14,7 +13,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(
     errorParam === "auth_not_configured"
-      ? "Falta configurar NEXT_PUBLIC_SUPABASE_ANON_KEY en Vercel."
+      ? "Falta next_public_supabase_anon_key (o la URL) en Vercel."
       : errorParam === "admin_only"
         ? "Esta sección es solo para el equipo interno."
         : errorParam === "auth_callback"
@@ -27,16 +26,13 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
     try {
-      const supabase = createBrowserSupabase();
-      const origin = window.location.origin;
-      const { error: otpError } = await supabase.auth.signInWithOtp({
-        email: email.trim(),
-        options: {
-          emailRedirectTo: `${origin}/auth/callback?next=${encodeURIComponent(next)}`,
-          shouldCreateUser: true,
-        },
+      const res = await fetch("/api/auth/magic-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), next }),
       });
-      if (otpError) throw otpError;
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "No se pudo enviar el link");
       setSent(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo enviar el link");
