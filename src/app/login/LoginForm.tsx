@@ -5,19 +5,25 @@ import { useSearchParams } from "next/navigation";
 
 export default function LoginPage() {
   const searchParams = useSearchParams();
-  const next = searchParams.get("next") || "/";
+  const next = searchParams.get("next") || "/cuenta";
   const errorParam = searchParams.get("error");
   const reason = searchParams.get("reason");
+  const blockedEmail = searchParams.get("email");
 
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(blockedEmail || "");
   const [sent, setSent] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(() => {
     if (errorParam === "auth_not_configured") {
-      return "Falta next_public_supabase_anon_key (o la URL) en Vercel.";
+      return "Falta configurar Supabase en Vercel.";
     }
     if (errorParam === "admin_only") {
-      return "Esta sección es solo para el equipo interno. Tu email tiene que estar en admin_emails.";
+      return (
+        `Tu sesión${blockedEmail ? ` (${blockedEmail})` : ""} no está en admin_emails. ` +
+        `En Vercel → Environment Variables poné: admin_emails=candela.caniete1@gmail.com,mailpruebascandela@gmail.com ` +
+        `(el mail exacto con el que pedís el link) y redeploy.`
+      );
     }
     if (errorParam === "auth_callback") {
       return reason
@@ -31,8 +37,8 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setNotice(null);
     try {
-      // 100% server-side: nunca manda API keys al browser
       const res = await fetch("/api/auth/magic-link", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -40,6 +46,7 @@ export default function LoginPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No se pudo enviar el link");
+      if (data.notice) setNotice(data.notice);
       setSent(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo enviar el link");
@@ -58,10 +65,17 @@ export default function LoginPage() {
       </p>
 
       {sent ? (
-        <p className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
-          Revisá <strong>{email}</strong> y abrí el link para entrar. Si no
-          llega, mirá spam (el mail sale por Resend).
-        </p>
+        <div className="mt-6 space-y-3">
+          <p className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
+            Revisá <strong>{email}</strong> y abrí el link. Si no llega, mirá
+            spam.
+          </p>
+          {notice ? (
+            <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              {notice}
+            </p>
+          ) : null}
+        </div>
       ) : (
         <form onSubmit={onSubmit} className="mt-6 space-y-4">
           <label className="flex flex-col gap-1.5">
@@ -71,7 +85,7 @@ export default function LoginPage() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="tu@negocio.com"
+              placeholder="tu@email.com"
               className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm"
             />
           </label>

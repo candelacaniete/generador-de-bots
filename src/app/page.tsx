@@ -13,18 +13,16 @@ export default function HomePage() {
       </p>
       <div className="mt-8 flex flex-wrap gap-3">
         <Link
-          href="/login"
+          href="/login?next=/cuenta"
           className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
         >
           Ingresar al panel
         </Link>
-        <Link
-          href="/admin"
-          className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-800"
-        >
-          Admin
-        </Link>
       </div>
+      <p className="mt-4 text-xs text-slate-500">
+        El admin interno se abre desde tu cuenta, si tu email está en{" "}
+        <code>admin_emails</code>.
+      </p>
     </main>
   );
 }
