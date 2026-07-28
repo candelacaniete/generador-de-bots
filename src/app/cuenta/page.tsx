@@ -4,6 +4,8 @@ import LogoutButton from "@/components/LogoutButton";
 import { adminEmails, getAuthUser, isAdminEmail } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 
+export const dynamic = "force-dynamic";
+
 export default async function CuentaPage() {
   const user = await getAuthUser();
   if (!user) {
