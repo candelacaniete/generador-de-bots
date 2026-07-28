@@ -19,10 +19,13 @@ App web para crear chatbots con IA a partir de un PDF/Word del negocio. Multi-te
    - `supabase/schema_bookings.sql`
    - `supabase/schema_auth.sql`
 2. En Supabase → Authentication → Providers: Email habilitado (magic link / OTP).
-3. Redirect URLs de Auth: `https://TU-DOMINIO/auth/callback`
+3. Supabase → Authentication → URL Configuration:
+   - **Site URL:** `https://generador-de-bots.vercel.app` (NO localhost)
+   - **Redirect URLs:** `https://generador-de-bots.vercel.app/auth/callback`
 4. Copiá `.env.example` → `.env.local` (o variables en Vercel).  
    Importantes: `next_public_supabase_anon_key`, `admin_emails`, `resend_api_key`
-   (también acepta MAYÚSCULAS).
+   (también acepta MAYÚSCULAS).  
+   `next_public_app_url` debe ser `https://generador-de-bots.vercel.app` (si queda en localhost, el magic link rompe).
 5. En [Google Cloud Console](https://console.cloud.google.com/):
    - OAuth Client ID (Web)
    - Redirect: `https://TU-DOMINIO/api/google/oauth/callback`

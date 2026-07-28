@@ -4,8 +4,7 @@ import {
   getGoogleAccountEmail,
 } from "@/lib/google-oauth";
 import { getSupabase } from "@/lib/supabase";
-import { normalizeAppUrl } from "@/lib/app-url";
-import { env } from "@/lib/env";
+import { resolvePublicAppUrl } from "@/lib/app-url";
 import { DEFAULT_HORARIO } from "@/lib/schedule";
 
 export const runtime = "nodejs";
@@ -15,8 +14,7 @@ export async function GET(req: NextRequest) {
   const businessId = req.nextUrl.searchParams.get("state");
   const oauthError = req.nextUrl.searchParams.get("error");
 
-  const appUrl =
-    normalizeAppUrl(env("NEXT_PUBLIC_APP_URL")) ?? req.nextUrl.origin;
+  const appUrl = resolvePublicAppUrl(req);
 
   if (oauthError || !code || !businessId) {
     return NextResponse.redirect(

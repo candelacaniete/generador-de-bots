@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { normalizeSupabaseUrl } from "@/lib/supabase";
 import { env } from "@/lib/env";
-import { normalizeAppUrl } from "@/lib/app-url";
+import { resolvePublicAppUrl } from "@/lib/app-url";
 
 export const runtime = "nodejs";
 
@@ -33,8 +33,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Email inválido" }, { status: 400 });
     }
 
-    const appUrl =
-      normalizeAppUrl(env("NEXT_PUBLIC_APP_URL")) || req.nextUrl.origin;
+    const appUrl = resolvePublicAppUrl(req);
     const redirectTo = `${appUrl}/auth/callback?next=${encodeURIComponent(nextPath)}`;
 
     const supabase = createClient(normalizeSupabaseUrl(rawUrl), anon, {
@@ -50,10 +49,17 @@ export async function POST(req: NextRequest) {
     });
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+      return NextResponse.json(
+        {
+          error: error.message,
+          hint:
+            "En Supabase → Authentication → URL Configuration: Site URL = https://generador-de-bots.vercel.app y Redirect URLs debe incluir https://generador-de-bots.vercel.app/auth/callback",
+        },
+        { status: 400 }
+      );
     }
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, redirect_to: redirectTo });
   } catch (err) {
     return NextResponse.json(
       {

@@ -1,8 +1,7 @@
 import { randomBytes } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApiAccess } from "@/lib/auth";
-import { env } from "@/lib/env";
-import { normalizeAppUrl } from "@/lib/app-url";
+import { resolvePublicAppUrl } from "@/lib/app-url";
 import { getSupabase } from "@/lib/supabase";
 
 export const runtime = "nodejs";
@@ -36,8 +35,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const appUrl =
-      normalizeAppUrl(env("NEXT_PUBLIC_APP_URL")) || req.nextUrl.origin;
+    const appUrl = resolvePublicAppUrl(req);
     const url = `${appUrl}/onboarding/${data.token}`;
 
     return NextResponse.json({
