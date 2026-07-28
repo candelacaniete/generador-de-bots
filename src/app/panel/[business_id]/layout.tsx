@@ -1,7 +1,12 @@
 import type { Metadata, Viewport } from "next";
-import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import LogoutButton from "@/components/LogoutButton";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
+import {
+  ensureBusinessAccess,
+  getAuthUser,
+  isAdminEmail,
+} from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 
 type LayoutProps = {
@@ -56,6 +61,26 @@ export async function generateMetadata({
 export default async function PanelLayout({ children, params }: LayoutProps) {
   const { business_id } = await params;
 
+  const user = await getAuthUser();
+  if (!user) {
+    redirect(`/login?next=${encodeURIComponent(`/panel/${business_id}`)}`);
+  }
+
+  const access = await ensureBusinessAccess(user, business_id);
+  if (!access.ok) {
+    return (
+      <main className="mx-auto flex min-h-full w-full max-w-lg flex-1 flex-col justify-center px-4 py-12">
+        <h1 className="text-xl font-semibold text-slate-900">Sin acceso</h1>
+        <p className="mt-2 text-sm text-slate-600">{access.error}</p>
+        <p className="mt-4 text-xs text-slate-500">
+          Sesión: {user.email}
+          {isAdminEmail(user.email) ? " (admin)" : ""}
+        </p>
+        <LogoutButton />
+      </main>
+    );
+  }
+
   let business: { id: string; nombre: string } | null = null;
   try {
     const supabase = getSupabase();
@@ -84,12 +109,7 @@ export default async function PanelLayout({ children, params }: LayoutProps) {
               {business.nombre}
             </p>
           </div>
-          <Link
-            href={`/bot/${business.id}`}
-            className="text-xs font-medium text-blue-600"
-          >
-            Snippet WP
-          </Link>
+          <LogoutButton />
         </div>
       </header>
       {children}

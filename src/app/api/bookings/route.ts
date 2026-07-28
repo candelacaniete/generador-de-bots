@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireBusinessApiAccess } from "@/lib/auth";
 import { cancelarTurno, confirmarTurno } from "@/lib/bookings";
 import { getSupabase } from "@/lib/supabase";
 
@@ -9,6 +10,9 @@ export async function GET(req: NextRequest) {
   if (!businessId) {
     return NextResponse.json({ error: "business_id obligatorio" }, { status: 400 });
   }
+
+  const access = await requireBusinessApiAccess(req, businessId);
+  if (!access.ok) return access.response;
 
   const supabase = getSupabase();
   const { data, error } = await supabase
@@ -40,6 +44,9 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+
+    const access = await requireBusinessApiAccess(req, businessId);
+    if (!access.ok) return access.response;
 
     if (action === "confirmar") {
       const result = await confirmarTurno(bookingId, businessId);

@@ -45,6 +45,9 @@ export default function AgendaPanel({
   const [conectado, setConectado] = useState(false);
   const [googleEmail, setGoogleEmail] = useState<string | null>(null);
   const [duracionDefault, setDuracionDefault] = useState(30);
+  const [colorPrimario, setColorPrimario] = useState("#2563eb");
+  const [emailNotificaciones, setEmailNotificaciones] = useState("");
+  const [ownerEmail, setOwnerEmail] = useState("");
   const [services, setServices] = useState<Service[]>([
     { nombre: "Consulta", duracion_minutos: 30 },
   ]);
@@ -68,6 +71,9 @@ export default function AgendaPanel({
       setRequiereSeña(Boolean(cfg.business.requiere_sena));
       setAliasCbu(cfg.business.alias_cbu || "");
       setInstruccionesSeña(cfg.business.instrucciones_sena || "");
+      setColorPrimario(cfg.business.color_primario || "#2563eb");
+      setEmailNotificaciones(cfg.business.email_notificaciones || "");
+      setOwnerEmail(cfg.business.owner_email || "");
       setConectado(Boolean(cfg.config.conectado));
       setGoogleEmail(cfg.config.google_account_email);
       setDuracionDefault(cfg.config.duracion_default_minutos || 30);
@@ -109,6 +115,9 @@ export default function AgendaPanel({
           requiere_sena: requiereSeña,
           alias_cbu: aliasCbu,
           instrucciones_sena: instruccionesSeña,
+          color_primario: colorPrimario,
+          email_notificaciones: emailNotificaciones,
+          owner_email: ownerEmail,
           config: {
             duracion_default_minutos: duracionDefault,
           },
@@ -223,6 +232,56 @@ export default function AgendaPanel({
             onChange={(e) => setDuracionDefault(Number(e.target.value) || 30)}
             className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
           />
+        </label>
+
+        <label className="mt-4 flex flex-col gap-1.5">
+          <span className="text-sm font-medium text-slate-700">
+            Color del bot (hex)
+          </span>
+          <div className="flex items-center gap-3">
+            <input
+              type="color"
+              value={colorPrimario}
+              onChange={(e) => setColorPrimario(e.target.value)}
+              className="h-10 w-14 cursor-pointer rounded border border-slate-300 bg-white p-1"
+            />
+            <input
+              value={colorPrimario}
+              onChange={(e) => setColorPrimario(e.target.value)}
+              placeholder="#2563eb"
+              pattern="^#[0-9A-Fa-f]{6}$"
+              className="flex-1 rounded-xl border border-slate-300 px-3 py-2 text-sm font-mono"
+            />
+          </div>
+        </label>
+
+        <label className="mt-4 flex flex-col gap-1.5">
+          <span className="text-sm font-medium text-slate-700">
+            Email para avisos de turnos confirmados
+          </span>
+          <input
+            type="email"
+            value={emailNotificaciones}
+            onChange={(e) => setEmailNotificaciones(e.target.value)}
+            placeholder="turnos@negocio.com"
+            className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+          />
+        </label>
+
+        <label className="mt-4 flex flex-col gap-1.5">
+          <span className="text-sm font-medium text-slate-700">
+            Email de acceso al panel (owner)
+          </span>
+          <input
+            type="email"
+            value={ownerEmail}
+            onChange={(e) => setOwnerEmail(e.target.value)}
+            placeholder="dueño@negocio.com"
+            className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+          />
+          <span className="text-xs text-slate-500">
+            Ese email puede entrar con magic link a este panel.
+          </span>
         </label>
 
         <label className="mt-4 flex flex-col gap-1.5">

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireAdminApiAccess } from "@/lib/auth";
 import { chunkText } from "@/lib/chunk";
 import { embedTexts } from "@/lib/embeddings";
 import { extractText } from "@/lib/extract";
@@ -35,6 +36,9 @@ function isUploadFile(value: FormDataEntryValue | null): value is File {
 
 export async function POST(req: NextRequest) {
   try {
+    const access = await requireAdminApiAccess(req);
+    if (!access.ok) return access.response;
+
     const envError = missingEnv();
     if (envError) {
       return NextResponse.json({ error: envError }, { status: 500 });

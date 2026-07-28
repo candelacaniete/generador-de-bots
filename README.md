@@ -5,10 +5,11 @@ App web para crear chatbots con IA a partir de un PDF/Word del negocio. Multi-te
 ## Stack
 
 - **Next.js** (App Router) + TypeScript + Tailwind
-- **Supabase** (Postgres + pgvector)
-- **Anthropic Claude** (`claude-haiku-4-5-20251001`) para respuestas + tool calling
+- **Supabase** (Postgres + pgvector + Auth magic link)
+- **Anthropic Claude** (`claude-haiku-4-5-20251001`) para respuestas
 - **OpenAI** (`text-embedding-3-small`) para embeddings
 - **Google Calendar API** (OAuth del dueño del negocio)
+- **Resend** (emails al confirmar turno)
 - Extracción PDF con **unpdf**
 
 ## Setup
@@ -16,48 +17,46 @@ App web para crear chatbots con IA a partir de un PDF/Word del negocio. Multi-te
 1. Ejecutá en Supabase SQL Editor:
    - `supabase/schema.sql`
    - `supabase/schema_bookings.sql`
-2. Copiá `.env.example` → `.env.local` (o variables en Vercel).
-3. En [Google Cloud Console](https://console.cloud.google.com/):
-   - Creá un OAuth Client ID (Web)
-   - Authorized redirect URI: `https://TU-DOMINIO/api/google/oauth/callback`
-   - Scopes: Calendar + email
-4. `npm install && npm run dev`
+   - `supabase/schema_auth.sql`
+2. En Supabase → Authentication → Providers: Email habilitado (magic link / OTP).
+3. Redirect URLs de Auth: `https://TU-DOMINIO/auth/callback`
+4. Copiá `.env.example` → `.env.local` (o variables en Vercel).  
+   Importantes: `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `ADMIN_EMAILS`, `RESEND_API_KEY`.
+5. En [Google Cloud Console](https://console.cloud.google.com/):
+   - OAuth Client ID (Web)
+   - Redirect: `https://TU-DOMINIO/api/google/oauth/callback`
+6. `npm install && npm run dev`
 
-## Agenda (fase 1)
+## Roles y rutas
 
-- `/bot/[business_id]` — snippet WordPress + preview del chat
-- `/panel/[business_id]` — panel interno de turnos (PWA instalable en el celular)
+| Ruta | Quién |
+|------|--------|
+| `/panel/[id]` | Dueño del negocio (magic link; email = `owner_email` o member) |
+| `/bot/[id]` | Solo admin (`ADMIN_EMAILS`) — snippet WordPress |
+| `/admin` | Solo admin — lista negocios, genera links de onboarding |
+| `/nuevo` | Solo admin — crear bot desde PDF |
+| `/onboarding/[token]` | Público, un solo uso |
+| `/login` | Magic link |
 
-En el panel:
+Migración de paneles ya compartidos: cargá el email del cliente en Configuración → **Email de acceso al panel**. El UUID sigue siendo la URL, pero ahora pide login.
 
-1. **Conectar Google Calendar** (OAuth) en la pestaña Configuración
-2. Activar agenda, definir servicios, alias/CBU si hay seña
-3. El bot ofrece horarios reales, crea eventos `PENDIENTE` en Calendar
-4. Confirmá/cancelá turnos desde la pestaña Turnos
-5. En Chrome/Android: “Instalar app”; en iPhone: Safari → Compartir → Agregar a pantalla de inicio
-6. Cron diario (Hobby) expira pendientes (`/api/cron/expire-bookings`).  
-   En plan Hobby Vercel solo permite 1 cron/día. Si necesitás cada 10 min, usá un cron externo (cron-job.org) pegándole a esa URL con header `Authorization: Bearer CRON_SECRET`.
+## Agenda
 
-Reglas del bot:
-
-- Teléfono obligatorio, email opcional
-- Ofrece 3–4 slots concretos (ventana 7 días; si no hay, el próximo en 14)
-- Sin slots → deriva a humano
-- Obra social / servicio con flag → deriva (no agenda automático)
-
-## Persistencia de chat
-
-El widget guarda `conversation_id` en `localStorage` y rehidrata el historial al reabrir la burbuja.
+1. El negocio entra a `/panel/[id]` con magic link
+2. Conecta Google Calendar, servicios, color, emails
+3. El bot ofrece horarios, pide confirmación de datos, re-valida el slot y crea `PENDIENTE`
+4. Confirmá/cancelá desde Turnos → emails vía Resend
+5. PWA: instalar desde el panel (Android) o “Agregar a inicio” (iPhone)
 
 ## Endpoints principales
 
 | Método | Ruta | Descripción |
 |--------|------|-------------|
-| `POST` | `/api/upload` | Crear bot desde PDF/DOCX |
-| `POST` | `/api/chat` | Chat RAG + tools de agenda (`conversation_id` opcional) |
-| `GET` | `/api/conversations` | Rehidratar historial |
-| `GET` | `/api/widget/[business_id]` | Script embebible |
-| `GET` | `/api/google/oauth/start` | Iniciar OAuth |
-| `GET/PUT` | `/api/agenda/config` | Config agenda/servicios |
-| `GET/POST` | `/api/bookings` | Listar / confirmar / cancelar |
+| `POST` | `/api/upload` | Crear bot desde PDF/DOCX (admin) |
+| `POST` | `/api/chat` | Chat RAG + orquestador de turnos |
+| `GET` | `/api/widget/[business_id]` | Script embebible (público) |
+| `GET/PUT` | `/api/agenda/config` | Config (auth panel) |
+| `GET/POST` | `/api/bookings` | Listar / confirmar / cancelar (auth panel) |
+| `POST` | `/api/admin/onboarding-tokens` | Crear link onboarding (admin) |
+| `GET/POST` | `/api/onboarding/[token]` | Form público |
 | `GET` | `/api/cron/expire-bookings` | Expirar pendientes |

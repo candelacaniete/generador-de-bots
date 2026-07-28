@@ -31,7 +31,7 @@ export async function GET(
     const supabase = getSupabase();
     const { data: business, error } = await supabase
       .from("businesses")
-      .select("id, nombre, slug")
+      .select("id, nombre, slug, color_primario")
       .eq("id", businessId)
       .maybeSingle();
 
@@ -54,6 +54,7 @@ export async function GET(
       businessId: business.id,
       apiBaseUrl: appBaseUrl(req),
       businessName: business.nombre,
+      primaryColor: business.color_primario || "#2563eb",
     });
 
     const filename = `chatbot-${business.slug}.js`;

@@ -3,10 +3,12 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-/** Oculta el chrome del generador en el panel PWA interno. */
+/** Oculta el chrome del generador en panel PWA y onboarding público. */
 export default function SiteHeader() {
   const pathname = usePathname();
-  if (pathname?.startsWith("/panel/")) return null;
+  if (pathname?.startsWith("/panel/") || pathname?.startsWith("/onboarding/")) {
+    return null;
+  }
 
   return (
     <header className="border-b border-slate-200 bg-white">
@@ -14,12 +16,20 @@ export default function SiteHeader() {
         <Link href="/" className="text-sm font-semibold text-slate-900">
           BotGen
         </Link>
-        <Link
-          href="/nuevo"
-          className="text-sm font-medium text-blue-600 hover:text-blue-700"
-        >
-          Nuevo bot
-        </Link>
+        <div className="flex items-center gap-4">
+          <Link
+            href="/admin"
+            className="text-sm font-medium text-slate-600 hover:text-slate-900"
+          >
+            Admin
+          </Link>
+          <Link
+            href="/login"
+            className="text-sm font-medium text-blue-600 hover:text-blue-700"
+          >
+            Ingresar
+          </Link>
+        </div>
       </div>
     </header>
   );

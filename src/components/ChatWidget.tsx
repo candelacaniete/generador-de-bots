@@ -11,6 +11,7 @@ type Message = {
 type ChatWidgetProps = {
   businessId: string;
   businessName: string;
+  primaryColor?: string;
 };
 
 function storageKey(businessId: string) {
@@ -20,6 +21,7 @@ function storageKey(businessId: string) {
 export default function ChatWidget({
   businessId,
   businessName,
+  primaryColor = "#2563eb",
 }: ChatWidgetProps) {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
@@ -179,7 +181,10 @@ export default function ChatWidget({
     <>
       {open ? (
         <div className="fixed bottom-24 right-4 z-50 flex h-[min(480px,70vh)] w-[min(360px,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl sm:right-6">
-          <div className="flex items-center justify-between bg-blue-600 px-4 py-3 text-white">
+          <div
+            className="flex items-center justify-between px-4 py-3 text-white"
+            style={{ backgroundColor: primaryColor }}
+          >
             <span className="text-sm font-semibold">{businessName}</span>
             <div className="flex items-center gap-2">
               <button
@@ -206,9 +211,14 @@ export default function ChatWidget({
                 key={m.id}
                 className={`max-w-[85%] whitespace-pre-wrap rounded-xl px-3 py-2 text-sm leading-relaxed ${
                   m.role === "user"
-                    ? "ml-auto bg-blue-600 text-white"
+                    ? "ml-auto text-white"
                     : "border border-slate-200 bg-white text-slate-900"
                 }`}
+                style={
+                  m.role === "user"
+                    ? { backgroundColor: primaryColor }
+                    : undefined
+                }
               >
                 {m.text}
               </div>
@@ -230,12 +240,13 @@ export default function ChatWidget({
               onChange={(e) => setInput(e.target.value)}
               placeholder="Escribí tu consulta…"
               disabled={busy}
-              className="flex-1 rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:opacity-60"
+              className="flex-1 rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none disabled:opacity-60"
             />
             <button
               type="submit"
               disabled={busy || !input.trim()}
-              className="rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+              className="rounded-xl px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              style={{ backgroundColor: primaryColor }}
             >
               Enviar
             </button>
@@ -246,7 +257,8 @@ export default function ChatWidget({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="fixed bottom-4 right-4 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-blue-600 text-white shadow-lg transition hover:scale-105 hover:bg-blue-700 sm:right-6"
+        className="fixed bottom-4 right-4 z-50 flex h-14 w-14 items-center justify-center rounded-full text-white shadow-lg transition hover:scale-105 sm:right-6"
+        style={{ backgroundColor: primaryColor }}
         aria-label={open ? "Cerrar chat" : "Abrir chat"}
       >
         <svg
