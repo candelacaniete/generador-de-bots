@@ -107,6 +107,7 @@ export async function middleware(request: NextRequest) {
     }
 
     if (isAdminRoute && !isAdminEmail(user.email)) {
+      // No filtrar el email ni detalles técnicos en la URL
       return redirectToLogin(request, pathname, "admin_only");
     }
 

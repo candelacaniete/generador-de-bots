@@ -8,26 +8,21 @@ export default function LoginPage() {
   const next = searchParams.get("next") || "/cuenta";
   const errorParam = searchParams.get("error");
   const reason = searchParams.get("reason");
-  const blockedEmail = searchParams.get("email");
 
-  const [email, setEmail] = useState(blockedEmail || "");
+  const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(() => {
     if (errorParam === "auth_not_configured") {
-      return "Falta configurar Supabase en Vercel.";
+      return "El acceso no está disponible por ahora. Probá más tarde.";
     }
     if (errorParam === "admin_only") {
-      return (
-        `Tu sesión${blockedEmail ? ` (${blockedEmail})` : ""} no está en admin_emails. ` +
-        `En Vercel → Environment Variables poné: admin_emails=candela.caniete1@gmail.com,mailpruebascandela@gmail.com ` +
-        `(el mail exacto con el que pedís el link) y redeploy.`
-      );
+      return "No tenés acceso a esa sección.";
     }
     if (errorParam === "auth_callback") {
       return reason
-        ? `No se pudo completar el login (${reason}). Pedí otro link.`
+        ? `No se pudo completar el login. Pedí otro link.`
         : "No se pudo completar el login. Pedí otro link.";
     }
     return null;
@@ -46,10 +41,16 @@ export default function LoginPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No se pudo enviar el link");
-      if (data.notice) setNotice(data.notice);
+      // No mostrar notices técnicos (Resend/Supabase/admin) al usuario
       setSent(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo enviar el link");
+      const msg = err instanceof Error ? err.message : "No se pudo enviar el link";
+      // Neutralizar fugas técnicas en errores de envío
+      if (/admin|resend|vercel|env|smtp|supabase/i.test(msg)) {
+        setError("No se pudo enviar el link. Probá de nuevo en unos minutos.");
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }

@@ -2,11 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { notFound, redirect } from "next/navigation";
 import LogoutButton from "@/components/LogoutButton";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
-import {
-  ensureBusinessAccess,
-  getAuthUser,
-  isAdminEmail,
-} from "@/lib/auth";
+import { ensureBusinessAccess, getAuthUser } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 
 type LayoutProps = {
@@ -71,12 +67,13 @@ export default async function PanelLayout({ children, params }: LayoutProps) {
     return (
       <main className="mx-auto flex min-h-full w-full max-w-lg flex-1 flex-col justify-center px-4 py-12">
         <h1 className="text-xl font-semibold text-slate-900">Sin acceso</h1>
-        <p className="mt-2 text-sm text-slate-600">{access.error}</p>
-        <p className="mt-4 text-xs text-slate-500">
-          Sesión: {user.email}
-          {isAdminEmail(user.email) ? " (admin)" : ""}
+        <p className="mt-2 text-sm text-slate-600">
+          Tu cuenta no tiene acceso a este panel. Contactanos si creés que es
+          un error.
         </p>
-        <LogoutButton />
+        <div className="mt-4">
+          <LogoutButton />
+        </div>
       </main>
     );
   }
