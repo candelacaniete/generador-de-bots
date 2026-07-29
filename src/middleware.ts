@@ -16,11 +16,26 @@ function adminEmails(): string[] {
     process.env.admin_emails ||
     "";
   return raw
-    .split(",")
-    .map((e) => e.trim().toLowerCase())
+    .split(/[,;\n]/)
+    .map((e) => e.trim().toLowerCase().replace(/^['"]|['"]$/g, ""))
     .filter(Boolean);
 }
 
+function isAdminEmail(email: string | null | undefined): boolean {
+  if (!email) return false;
+  return adminEmails().includes(email.trim().toLowerCase());
+}
+
+function redirectToLogin(request: NextRequest, pathname: string, error?: string) {
+  const login = new URL("/login", request.url);
+  login.searchParams.set("next", pathname + request.nextUrl.search);
+  if (error) login.searchParams.set("error", error);
+  return NextResponse.redirect(login);
+}
+
+/**
+ * Fail-closed: cualquier error de auth → redirect a login (nunca dejar pasar).
+ */
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -36,71 +51,70 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const rawUrl =
-    process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    process.env.next_public_supabase_url;
-  const anon =
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-    process.env.next_public_supabase_anon_key;
+  const isAdminRoute =
+    pathname.startsWith("/admin") ||
+    pathname.startsWith("/bot/") ||
+    pathname.startsWith("/nuevo");
 
-  if (!rawUrl || !anon) {
-    const login = new URL("/login", request.url);
-    login.searchParams.set("error", "auth_not_configured");
-    login.searchParams.set("next", pathname);
-    return NextResponse.redirect(login);
-  }
+  try {
+    const rawUrl =
+      process.env.NEXT_PUBLIC_SUPABASE_URL ||
+      process.env.next_public_supabase_url;
+    const anon =
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+      process.env.next_public_supabase_anon_key;
 
-  let response = NextResponse.next({
-    request: { headers: request.headers },
-  });
+    if (!rawUrl || !anon) {
+      return redirectToLogin(request, pathname, "auth_not_configured");
+    }
 
-  const supabase = createServerClient(normalizeSupabaseUrl(rawUrl), anon, {
-    cookies: {
-      getAll() {
-        return request.cookies.getAll();
+    // Rutas admin: sin lista configurada → denegar siempre
+    if (isAdminRoute && adminEmails().length === 0) {
+      console.error("[middleware] admin_emails vacío — denegando ruta admin");
+      return redirectToLogin(request, pathname, "admin_only");
+    }
+
+    let response = NextResponse.next({
+      request: { headers: request.headers },
+    });
+
+    const supabase = createServerClient(normalizeSupabaseUrl(rawUrl), anon, {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) => {
+            request.cookies.set(name, value);
+          });
+          response = NextResponse.next({
+            request: { headers: request.headers },
+          });
+          cookiesToSet.forEach(({ name, value, options }) => {
+            response.cookies.set(name, value, options);
+          });
+        },
       },
-      setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value }) => {
-          request.cookies.set(name, value);
-        });
-        response = NextResponse.next({
-          request: { headers: request.headers },
-        });
-        cookiesToSet.forEach(({ name, value, options }) => {
-          response.cookies.set(name, value, options);
-        });
-      },
-    },
-  });
+    });
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
 
-  if (!user) {
-    const login = new URL("/login", request.url);
-    login.searchParams.set("next", pathname + request.nextUrl.search);
-    return NextResponse.redirect(login);
+    if (userError || !user) {
+      return redirectToLogin(request, pathname);
+    }
+
+    if (isAdminRoute && !isAdminEmail(user.email)) {
+      return redirectToLogin(request, pathname, "admin_only");
+    }
+
+    return response;
+  } catch (err) {
+    console.error("[middleware] fail-closed", err);
+    return redirectToLogin(request, pathname);
   }
-
-  const email = user.email?.toLowerCase() ?? "";
-  const isAdmin = adminEmails().includes(email);
-
-  // /bot, /nuevo y /admin: solo admins internos
-  if (
-    (pathname.startsWith("/bot/") ||
-      pathname.startsWith("/nuevo") ||
-      pathname.startsWith("/admin")) &&
-    !isAdmin
-  ) {
-    const login = new URL("/login", request.url);
-    login.searchParams.set("error", "admin_only");
-    login.searchParams.set("email", email);
-    login.searchParams.set("next", pathname);
-    return NextResponse.redirect(login);
-  }
-
-  return response;
 }
 
 export const config = {
@@ -112,5 +126,6 @@ export const config = {
     "/admin",
     "/admin/:path*",
     "/cuenta",
+    "/cuenta/:path*",
   ],
 };

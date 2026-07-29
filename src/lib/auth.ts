@@ -10,14 +10,16 @@ export type PanelRole = "owner" | "staff" | "admin_interno";
 export function adminEmails(): string[] {
   const raw = env("ADMIN_EMAILS") || "";
   return raw
-    .split(",")
-    .map((e) => e.trim().toLowerCase())
+    .split(/[,;\n]/)
+    .map((e) => e.trim().toLowerCase().replace(/^['"]|['"]$/g, ""))
     .filter(Boolean);
 }
 
 export function isAdminEmail(email: string | null | undefined): boolean {
   if (!email) return false;
-  return adminEmails().includes(email.trim().toLowerCase());
+  const list = adminEmails();
+  if (list.length === 0) return false;
+  return list.includes(email.trim().toLowerCase());
 }
 
 export async function getAuthUser(): Promise<User | null> {

@@ -5,9 +5,13 @@ import CreateOnboardingToken from "@/components/CreateOnboardingToken";
 import { getAuthUser, isAdminEmail } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default async function AdminPage() {
+  // Re-validación server-side (además del layout y el middleware)
   const user = await getAuthUser();
-  if (!user || !isAdminEmail(user.email)) {
+  if (!user?.email || !isAdminEmail(user.email)) {
     redirect("/login?error=admin_only");
   }
 
