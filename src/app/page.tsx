@@ -19,10 +19,6 @@ export default function HomePage() {
           Ingresar al panel
         </Link>
       </div>
-      <p className="mt-4 text-xs text-slate-500">
-        El admin interno se abre desde tu cuenta, si tu email está en{" "}
-        <code>admin_emails</code>.
-      </p>
     </main>
   );
 }

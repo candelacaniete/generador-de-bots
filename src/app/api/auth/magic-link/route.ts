@@ -3,7 +3,6 @@ import { createClient } from "@supabase/supabase-js";
 import { getSupabase, normalizeSupabaseUrl } from "@/lib/supabase";
 import { resolvePublicAppUrl } from "@/lib/app-url";
 import { sendMagicLinkEmail } from "@/lib/email";
-import { isAdminEmail } from "@/lib/auth";
 import { env } from "@/lib/env";
 
 export const runtime = "nodejs";
@@ -18,14 +17,9 @@ async function sendViaSupabaseAuthEmail(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const rawUrl = env("NEXT_PUBLIC_SUPABASE_URL");
   const anon = env("NEXT_PUBLIC_SUPABASE_ANON_KEY");
-
-  // Preferir anon real; si pegaron service_role en anon_key, igual sirve en server
   const key = anon || env("SUPABASE_SERVICE_ROLE_KEY");
   if (!rawUrl || !key) {
-    return {
-      ok: false,
-      error: "Faltan credenciales de Supabase para el fallback de email",
-    };
+    return { ok: false, error: "send_failed" };
   }
 
   const supabase = createClient(normalizeSupabaseUrl(rawUrl), key, {
@@ -41,23 +35,15 @@ async function sendViaSupabaseAuthEmail(
   });
 
   if (error) {
-    if (/rate limit/i.test(error.message)) {
-      return {
-        ok: false,
-        error:
-          "Supabase también frenó el envío (rate limit). Esperá un rato o verificá un dominio en Resend.",
-      };
-    }
-    return { ok: false, error: error.message };
+    console.error("[magic-link supabase otp]", error.message);
+    return { ok: false, error: "send_failed" };
   }
 
   return { ok: true };
 }
 
 /**
- * Magic link server-side:
- * 1) generateLink + Resend (ideal)
- * 2) si Resend está en modo test / sin dominio → fallback al mail de Supabase Auth
+ * Magic link server-side. Respuestas al cliente sin fugas técnicas.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -91,26 +77,15 @@ export async function POST(req: NextRequest) {
     }
 
     if (generated.error || !generated.data) {
-      // Sin generateLink: aún podemos mandar OTP nativo de Supabase
       const native = await sendViaSupabaseAuthEmail(email, redirectTo);
       if (!native.ok) {
+        console.error("[magic-link]", generated.error?.message, native.error);
         return NextResponse.json(
-          {
-            error:
-              generated.error?.message ||
-              native.error ||
-              "No se pudo generar el link de acceso",
-          },
+          { error: "No se pudo enviar el link. Probá de nuevo en unos minutos." },
           { status: 400 }
         );
       }
-      return NextResponse.json({
-        ok: true,
-        via: "supabase_email",
-        is_admin: isAdminEmail(email),
-        notice:
-          "Te mandamos el link con el mailer de Supabase (no Resend).",
-      });
+      return NextResponse.json({ ok: true });
     }
 
     const props = generated.data.properties as {
@@ -127,7 +102,7 @@ export async function POST(req: NextRequest) {
 
     if (!loginUrl) {
       return NextResponse.json(
-        { error: "Supabase no devolvió un link usable" },
+        { error: "No se pudo enviar el link. Probá de nuevo en unos minutos." },
         { status: 500 }
       );
     }
@@ -135,58 +110,31 @@ export async function POST(req: NextRequest) {
     const sent = await sendMagicLinkEmail({ to: email, loginUrl });
 
     if (sent.ok) {
-      return NextResponse.json({
-        ok: true,
-        via: "resend",
-        is_admin: isAdminEmail(email),
-      });
+      return NextResponse.json({ ok: true });
     }
 
-    // Resend en modo test solo manda al mail de la cuenta Resend
+    console.error("[magic-link resend]", sent.error);
+
     if (isResendTestRestriction(sent.error)) {
       const native = await sendViaSupabaseAuthEmail(email, redirectTo);
-      if (native.ok) {
-        return NextResponse.json({
-          ok: true,
-          via: "supabase_email_fallback",
-          is_admin: isAdminEmail(email),
-          notice:
-            "Resend está en modo test (solo manda a mailpruebascandela@gmail.com). Usamos el mail de Supabase para este envío. Para producción: verificá un dominio en resend.com/domains y poné ese from en resend_from.",
-        });
-      }
-
+      if (native.ok) return NextResponse.json({ ok: true });
       return NextResponse.json(
-        {
-          error:
-            `Resend solo puede mandar a tu mail de prueba (mailpruebascandela@gmail.com) hasta que verifiques un dominio. ` +
-            `Opciones: 1) ingresá con mailpruebascandela@gmail.com, 2) verificá dominio en Resend, 3) fallback Supabase falló: ${native.error}`,
-        },
+        { error: "No se pudo enviar el link. Probá de nuevo en unos minutos." },
         { status: 400 }
       );
     }
 
-    // Otro error de Resend → intentar Supabase igual
     const native = await sendViaSupabaseAuthEmail(email, redirectTo);
-    if (native.ok) {
-      return NextResponse.json({
-        ok: true,
-        via: "supabase_email_fallback",
-        is_admin: isAdminEmail(email),
-        notice: `Resend falló (${sent.error}). Enviamos por Supabase.`,
-      });
-    }
+    if (native.ok) return NextResponse.json({ ok: true });
 
     return NextResponse.json(
-      { error: `${sent.error} / fallback: ${native.error}` },
+      { error: "No se pudo enviar el link. Probá de nuevo en unos minutos." },
       { status: 500 }
     );
   } catch (err) {
     console.error("[magic-link]", err);
     return NextResponse.json(
-      {
-        error:
-          err instanceof Error ? err.message : "No se pudo enviar el magic link",
-      },
+      { error: "No se pudo enviar el link. Probá de nuevo en unos minutos." },
       { status: 500 }
     );
   }
