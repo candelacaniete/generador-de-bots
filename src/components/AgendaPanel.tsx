@@ -38,7 +38,6 @@ export default function AgendaPanel({
   const [error, setError] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
 
-  const [agendaHabilitada, setAgendaHabilitada] = useState(false);
   const [requiereSeña, setRequiereSeña] = useState(false);
   const [aliasCbu, setAliasCbu] = useState("");
   const [instruccionesSeña, setInstruccionesSeña] = useState("");
@@ -67,7 +66,6 @@ export default function AgendaPanel({
       const cfg = await cfgRes.json();
       if (!cfgRes.ok) throw new Error(cfg.error || "Error al cargar config");
 
-      setAgendaHabilitada(Boolean(cfg.business.agenda_habilitada));
       setRequiereSeña(Boolean(cfg.business.requiere_sena));
       setAliasCbu(cfg.business.alias_cbu || "");
       setInstruccionesSeña(cfg.business.instrucciones_sena || "");
@@ -111,7 +109,6 @@ export default function AgendaPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           business_id: businessId,
-          agenda_habilitada: agendaHabilitada,
           requiere_sena: requiereSeña,
           alias_cbu: aliasCbu,
           instrucciones_sena: instruccionesSeña,
@@ -202,15 +199,7 @@ export default function AgendaPanel({
           </span>
         </div>
 
-        <div className="mt-5 grid gap-4 sm:grid-cols-2">
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              checked={agendaHabilitada}
-              onChange={(e) => setAgendaHabilitada(e.target.checked)}
-            />
-            Agenda habilitada en el bot
-          </label>
+        <div className="mt-5">
           <label className="flex items-center gap-2 text-sm text-slate-700">
             <input
               type="checkbox"
@@ -219,6 +208,10 @@ export default function AgendaPanel({
             />
             Requiere seña manual
           </label>
+          <p className="mt-2 text-xs text-slate-500">
+            La activación de turnos en el bot la gestiona el equipo. Acá
+            podés cargar Calendar, servicios y seña con anticipación.
+          </p>
         </div>
 
         <label className="mt-4 flex flex-col gap-1.5">

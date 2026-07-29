@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import LogoutButton from "@/components/LogoutButton";
 import CreateOnboardingToken from "@/components/CreateOnboardingToken";
+import AgendaToggle from "@/components/AgendaToggle";
 import { getAuthUser, isAdminEmail } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 
@@ -66,11 +67,14 @@ export default async function AdminPage() {
               <div>
                 <p className="font-medium text-slate-900">{b.nombre}</p>
                 <p className="text-xs text-slate-500">
-                  {b.owner_email || "sin owner_email"} · agenda{" "}
-                  {b.agenda_habilitada ? "ON" : "OFF"}
+                  {b.owner_email || "sin owner_email"}
                 </p>
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <AgendaToggle
+                  businessId={b.id}
+                  initialEnabled={Boolean(b.agenda_habilitada)}
+                />
                 <Link
                   href={`/bot/${b.id}`}
                   className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-800"
