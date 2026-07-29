@@ -48,10 +48,7 @@ export async function GET(req: NextRequest) {
 
     if (error) throw new Error(error.message);
 
-    await supabase
-      .from("businesses")
-      .update({ agenda_habilitada: true })
-      .eq("id", businessId);
+    // No auto-activar agenda_habilitada: eso lo prende solo el admin interno.
 
     return NextResponse.redirect(
       `${appUrl}/panel/${businessId}?tab=config&calendar=connected`

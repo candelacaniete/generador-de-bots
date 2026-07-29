@@ -82,9 +82,7 @@ export async function PUT(req: NextRequest) {
     const supabase = getSupabase();
 
     const businessPatch: Record<string, unknown> = {};
-    if (typeof body.agenda_habilitada === "boolean") {
-      businessPatch.agenda_habilitada = body.agenda_habilitada;
-    }
+    // agenda_habilitada es solo admin — se ignora si viene del panel del cliente
     if (typeof body.requiere_sena === "boolean") {
       businessPatch.requiere_sena = body.requiere_sena;
     }
